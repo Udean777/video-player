@@ -1,0 +1,13 @@
+package app.subtle.player.domain.repository
+
+import app.subtle.player.domain.model.DirectoryContent
+import app.subtle.player.domain.model.Video
+
+interface StorageRepository {
+
+    /** Every video under the storage root, recursively. */
+    suspend fun allVideos(): List<Video>
+
+    /** Contents of [path]; null means the storage root. Only folders containing videos are listed. */
+    suspend fun listDirectory(path: String?): DirectoryContent
+}

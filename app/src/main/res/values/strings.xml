@@ -1,0 +1,38 @@
+<resources>
+    <string name="app_name">Subtle</string>
+    <string name="open_video">Open video</string>
+    <string name="no_video_chosen">Choose a video file to start playback</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="previous_video">Previous video</string>
+    <string name="next_video">Next video</string>
+    <string name="rewind_10">Rewind 10 seconds</string>
+    <string name="forward_10">Forward 10 seconds</string>
+    <string name="lock_orientation">Lock orientation</string>
+    <string name="unlock_orientation">Unlock orientation</string>
+    <string name="restart_video">Restart from beginning</string>
+    <string name="player_error_unsupported">This file can’t be played.</string>
+    <string name="player_error_unavailable">The file is no longer available.</string>
+    <string name="player_error_engine">Playback failed.</string>
+    <string name="back">Back</string>
+    <string name="tab_home">Home</string>
+    <string name="tab_browse">Browse</string>
+    <string name="list_view">List view</string>
+    <string name="grid_view">Grid view</string>
+    <string name="refresh_list">Refresh</string>
+    <string name="no_entries">No videos here</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_grant">Allow access</string>
+    <string name="onboarding_slide1_title">Plays what you already have</string>
+    <string name="onboarding_slide1_desc">A VLC-style player for the video files on your device. Offline only — no account, no analytics, no network.</string>
+    <string name="onboarding_slide2_title">Subtitles done right</string>
+    <string name="onboarding_slide2_desc">Soft and hard subtitles, with styling and timing you control.</string>
+    <string name="onboarding_access_title">Let Subtle see your videos</string>
+    <string name="onboarding_access_desc">Subtle needs “All files access” to read videos and subtitles anywhere on your device. Your files never leave your phone.</string>
+    <string name="onboarding_access_hint">You can change this anytime in Android settings.</string>
+    <plurals name="video_count">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
+</resources>

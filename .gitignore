@@ -1,0 +1,40 @@
+# Android Studio / IntelliJ
+*.iml
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+
+# Gradle
+.gradle/
+.kotlin/
+/build/
+/app/build/
+
+# Local SDK location — machine specific
+local.properties
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Captures and screenshots
+/captures/
+
+# macOS
+.DS_Store
+
+# Signing keys — never commit
+*.jks
+*.keystore
+
+# Build outputs
+*.apk
+*.aab
+*.hprof
+*.log
+
+# Local tooling output
+/graphify-out/

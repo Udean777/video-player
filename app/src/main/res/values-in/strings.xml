@@ -1,0 +1,37 @@
+<resources>
+    <string name="app_name">Subtle</string>
+    <string name="open_video">Buka video</string>
+    <string name="no_video_chosen">Pilih berkas video untuk mulai memutar</string>
+    <string name="play">Putar</string>
+    <string name="pause">Jeda</string>
+    <string name="previous_video">Video sebelumnya</string>
+    <string name="next_video">Video berikutnya</string>
+    <string name="rewind_10">Mundur 10 detik</string>
+    <string name="forward_10">Maju 10 detik</string>
+    <string name="lock_orientation">Kunci orientasi</string>
+    <string name="unlock_orientation">Buka kunci orientasi</string>
+    <string name="restart_video">Putar dari awal</string>
+    <string name="player_error_unsupported">Berkas ini tidak dapat diputar.</string>
+    <string name="player_error_unavailable">Berkas sudah tidak tersedia.</string>
+    <string name="player_error_engine">Pemutaran gagal.</string>
+    <string name="back">Kembali</string>
+    <string name="tab_home">Beranda</string>
+    <string name="tab_browse">Jelajah</string>
+    <string name="list_view">Tampilan daftar</string>
+    <string name="grid_view">Tampilan grid</string>
+    <string name="refresh_list">Segarkan</string>
+    <string name="no_entries">Tidak ada video di sini</string>
+    <string name="onboarding_next">Lanjut</string>
+    <string name="onboarding_back">Kembali</string>
+    <string name="onboarding_grant">Izinkan akses</string>
+    <string name="onboarding_slide1_title">Memutar yang sudah kamu punya</string>
+    <string name="onboarding_slide1_desc">Pemutar bergaya VLC untuk file video di perangkatmu. Hanya offline — tanpa akun, tanpa analitik, tanpa jaringan.</string>
+    <string name="onboarding_slide2_title">Subtitle yang rapi</string>
+    <string name="onboarding_slide2_desc">Subtitle soft dan hard, dengan gaya dan waktu yang bisa kamu atur.</string>
+    <string name="onboarding_access_title">Izinkan Subtle melihat videomu</string>
+    <string name="onboarding_access_desc">Subtle butuh “Akses semua file” untuk membaca video dan subtitle di mana pun di perangkatmu. File-mu tidak pernah keluar dari ponsel.</string>
+    <string name="onboarding_access_hint">Kamu bisa mengubahnya kapan saja di pengaturan Android.</string>
+    <plurals name="video_count">
+        <item quantity="other">%d video</item>
+    </plurals>
+</resources>

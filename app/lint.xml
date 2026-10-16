@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- targetSdk 36 is deliberate per docs/ARCHITECTURE.md (API 37 is compile-only until stable). -->
+    <issue id="OldTargetApi" severity="ignore" />
+</lint>
