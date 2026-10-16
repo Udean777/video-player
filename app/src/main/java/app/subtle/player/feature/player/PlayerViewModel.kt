@@ -12,9 +12,16 @@ import app.subtle.player.core.player.PlayerController
 import app.subtle.player.core.player.PlayerControllerFactory
 import app.subtle.player.core.player.PlayerError
 import app.subtle.player.core.player.PlayerState
+import app.subtle.player.core.player.SubtitleSource
+import app.subtle.player.core.player.Track
+import app.subtle.player.domain.model.SubtitleFile
 import app.subtle.player.domain.model.Video
+import app.subtle.player.domain.model.VideoPreferences
 import app.subtle.player.domain.repository.PlaybackProgressRepository
+import app.subtle.player.domain.repository.SettingsRepository
 import app.subtle.player.domain.repository.StorageRepository
+import app.subtle.player.domain.repository.SubtitleRepository
+import app.subtle.player.domain.repository.VideoPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
@@ -26,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -34,6 +42,9 @@ class PlayerViewModel @Inject constructor(
     private val controllerFactory: PlayerControllerFactory,
     private val storageRepository: StorageRepository,
     private val progressRepository: PlaybackProgressRepository,
+    private val subtitleRepository: SubtitleRepository,
+    private val preferencesRepository: VideoPreferencesRepository,
+    private val settingsRepository: SettingsRepository,
     private val savedStateHandle: SavedStateHandle,
     @PlayerDispatcher private val playerDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -45,21 +56,32 @@ class PlayerViewModel @Inject constructor(
     private val _fatalError = MutableStateFlow<PlayerError?>(null)
     private val _playlist = MutableStateFlow<List<Video>>(emptyList())
     private val _index = MutableStateFlow(-1)
+    private val _externalSubtitles = MutableStateFlow<List<SubtitleFile>>(emptyList())
+    private val _videoPreferences = MutableStateFlow(VideoPreferences())
 
     val uiState: StateFlow<PlayerUiState> =
-        combine(_videoUri, _playerState, _fatalError, _playlist, _index) { uri, player, fatal, playlist, index ->
-            PlayerUiState(
-                videoUri = uri,
-                player = player,
-                fatalError = fatal,
-                hasPrevious = index > 0,
-                hasNext = index >= 0 && index < playlist.lastIndex,
-            )
+        combine(
+            combine(_videoUri, _playerState, _fatalError, _playlist, _index) { uri, player, fatal, playlist, index ->
+                PlayerUiState(
+                    videoUri = uri,
+                    player = player,
+                    fatalError = fatal,
+                    hasPrevious = index > 0,
+                    hasNext = index >= 0 && index < playlist.lastIndex,
+                )
+            },
+            _externalSubtitles,
+            _videoPreferences,
+        ) { base, subtitles, prefs ->
+            base.copy(externalSubtitles = subtitles, videoPreferences = prefs)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, PlayerUiState())
 
     private var controller: PlayerController? = null
     private var loadJob: Job? = null
     private var lastAutoSaveMs = 0L
+    private var delaysApplied = false
+    private var hardSubsApplied = false
+    private var forceSoftwareDecoding = false
     private val _controllerFlow = MutableStateFlow<PlayerController?>(null)
 
     /** Emits the active controller so the UI can bind the video output once it exists. */
@@ -86,12 +108,19 @@ class PlayerViewModel @Inject constructor(
         _fatalError.value = null
         _playlist.value = emptyList()
         _index.value = -1
+        _externalSubtitles.value = emptyList()
+        _videoPreferences.value = VideoPreferences()
+        delaysApplied = false
+        hardSubsApplied = false
         loadJob?.cancel()
         // LibVLC construction and the first decode are heavy; keep them off the main thread.
         loadJob = viewModelScope.launch(playerDispatcher) {
+            forceSoftwareDecoding = runCatching { settingsRepository.settings.first().forceSoftwareDecoding }
+                .getOrDefault(forceSoftwareDecoding)
             val active = controller ?: createController() ?: return@launch
             val startMs = runCatching { progressRepository.get(uri.toString())?.resumePositionMs() ?: 0L }
                 .getOrDefault(0L)
+            runCatching { preferencesRepository.get(uri.toString()) }.onSuccess { _videoPreferences.value = it }
             try {
                 active.load(MediaSource.Content(uri), startMs)
             } catch (e: CancellationException) {
@@ -100,6 +129,7 @@ class PlayerViewModel @Inject constructor(
                 _fatalError.value = PlayerError.Engine(e.message)
             }
             resolvePlaylist(uri)
+            discoverSubtitles(uri.toString())
         }
     }
 
@@ -132,6 +162,63 @@ class PlayerViewModel @Inject constructor(
 
     fun previous() {
         _playlist.value.getOrNull(_index.value - 1)?.let { open(it.uri.toUri()) }
+    }
+
+    /** [Track.DISABLED_ID] turns subtitles off. */
+    fun selectSubtitleTrack(id: Int) {
+        controller?.selectSubtitleTrack(id)
+    }
+
+    fun selectAudioTrack(id: Int) {
+        controller?.selectAudioTrack(id)
+    }
+
+    fun setSpeed(rate: Float) {
+        controller?.setSpeed(rate)
+    }
+
+    fun adjustSubtitleDelay(deltaMs: Long) {
+        val next = (_playerState.value.subtitleDelayMs + deltaMs).coerceIn(-MAX_DELAY_MS, MAX_DELAY_MS)
+        controller?.setSubtitleDelay(next)
+        persistPreferences(_videoPreferences.value.copy(subtitleDelayMs = next))
+    }
+
+    fun resetSubtitleDelay() {
+        controller?.setSubtitleDelay(0L)
+        persistPreferences(_videoPreferences.value.copy(subtitleDelayMs = 0L))
+    }
+
+    fun setHardSubs(enabled: Boolean) {
+        persistPreferences(_videoPreferences.value.copy(hasHardSubs = enabled))
+        if (enabled) controller?.selectSubtitleTrack(Track.DISABLED_ID)
+    }
+
+    fun setCharsetOverride(charset: String?) {
+        persistPreferences(_videoPreferences.value.copy(charsetOverride = charset))
+    }
+
+    fun adjustAudioDelay(deltaMs: Long) {
+        val next = (_playerState.value.audioDelayMs + deltaMs).coerceIn(-MAX_DELAY_MS, MAX_DELAY_MS)
+        controller?.setAudioDelay(next)
+        persistPreferences(_videoPreferences.value.copy(audioDelayMs = next))
+    }
+
+    fun resetAudioDelay() {
+        controller?.setAudioDelay(0L)
+        persistPreferences(_videoPreferences.value.copy(audioDelayMs = 0L))
+    }
+
+    /** Adds an external file (discovered or picked) to the current session and selects it. */
+    fun loadSubtitle(subtitle: SubtitleFile) {
+        viewModelScope.launch {
+            val prepared = runCatching {
+                subtitleRepository.prepareForPlayback(subtitle, _videoPreferences.value.charsetOverride)
+            }.getOrNull() ?: return@launch
+            controller?.addExternalSubtitle(
+                SubtitleSource.Content(prepared.toUri(), subtitle.displayName),
+                select = true,
+            )
+        }
     }
 
     /** Stops playback and drops the engine. Called when the player screen leaves composition. */
@@ -167,15 +254,30 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private fun discoverSubtitles(videoUri: String) {
+        viewModelScope.launch {
+            val subtitles = runCatching { storageRepository.subtitlesFor(videoUri) }
+                .getOrDefault(emptyList())
+            _externalSubtitles.value = subtitles
+        }
+    }
+
+    private fun persistPreferences(preferences: VideoPreferences) {
+        _videoPreferences.value = preferences
+        val uri = _videoUri.value?.toString() ?: return
+        viewModelScope.launch { runCatching { preferencesRepository.save(uri, preferences) } }
+    }
+
     private fun createController(): PlayerController? =
         try {
-            controllerFactory.create(PlayerConfig()).also { created ->
+            controllerFactory.create(PlayerConfig(forceSoftwareDecoding = forceSoftwareDecoding)).also { created ->
                 controller = created
                 _controllerFlow.value = created
                 viewModelScope.launch {
                     created.state.collect { state ->
                         _playerState.value = state
                         maybeAutoSave(state)
+                        applyInitialPreferences(state)
                     }
                 }
             }
@@ -183,6 +285,20 @@ class PlayerViewModel @Inject constructor(
             _fatalError.value = PlayerError.Engine(e.message)
             null
         }
+
+    /** Applies the saved delay and hard-subtitle policy once their prerequisites exist. */
+    private fun applyInitialPreferences(state: PlayerState) {
+        val prefs = _videoPreferences.value
+        if (!delaysApplied && state.status == PlayerState.Status.Playing) {
+            delaysApplied = true
+            controller?.setSubtitleDelay(prefs.subtitleDelayMs)
+            controller?.setAudioDelay(prefs.audioDelayMs)
+        }
+        if (!hardSubsApplied && prefs.hasHardSubs && state.subtitleTracks.isNotEmpty()) {
+            hardSubsApplied = true
+            controller?.selectSubtitleTrack(Track.DISABLED_ID)
+        }
+    }
 
     /** Persists progress while playing so a kill or a back press doesn't lose the position. */
     private fun maybeAutoSave(state: PlayerState) {
@@ -217,5 +333,6 @@ class PlayerViewModel @Inject constructor(
         private const val KEY_VIDEO_URI = "video_uri"
         private const val SKIP_STEP_MS = 10_000L
         private const val AUTO_SAVE_INTERVAL_MS = 10_000L
+        private const val MAX_DELAY_MS = 60_000L
     }
 }

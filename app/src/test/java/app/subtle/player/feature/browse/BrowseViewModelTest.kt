@@ -3,6 +3,7 @@ package app.subtle.player.feature.browse
 import androidx.lifecycle.SavedStateHandle
 import app.subtle.player.domain.model.DirectoryContent
 import app.subtle.player.domain.model.FolderEntry
+import app.subtle.player.domain.model.SubtitleFile
 import app.subtle.player.domain.model.Video
 import app.subtle.player.domain.repository.StorageRepository
 import app.subtle.player.feature.common.BrowserViewMode
@@ -87,6 +88,8 @@ class BrowseViewModelTest {
 
 private class FakeStorageRepository : StorageRepository {
     override suspend fun allVideos(): List<Video> = emptyList()
+
+    override suspend fun subtitlesFor(videoUri: String): List<SubtitleFile> = emptyList()
 
     override suspend fun listDirectory(path: String?): DirectoryContent =
         if (path == null) {

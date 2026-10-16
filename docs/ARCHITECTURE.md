@@ -42,14 +42,16 @@ app/src/main/java/app/subtle/player/
 │   ├── VlcOptions.kt                  LibVLC option builder (incl. subtitle style)
 │   └── VlcPlayerControllerFactory.kt
 ├── domain/
-│   ├── model/                         Video, SubtitleFile, PlaybackProgress, SubtitleStyle, VideoPreferences
-│   ├── repository/                    StorageRepository, PlaybackProgressRepository
+│   ├── model/                         Video, SubtitleFile, PlaybackProgress, SubtitleStyle, VideoPreferences, AppSettings
+│   ├── repository/                    StorageRepository, PlaybackProgressRepository, SubtitleRepository,
+│   │                                  VideoPreferencesRepository, SettingsRepository
 │   └── usecase/                       ScanLibraryUseCase, ObserveLibraryUseCase, SubtitleMatcher, ...
 ├── data/
 │   ├── local/                         (target) SubtleDatabase, DAOs, entities, mappers
-│   ├── storage/                       AndroidStorageAccess, FileVideoScanner, VideoThumbnailLoader, CharsetNormalizer
+│   ├── storage/                       AndroidStorageAccess, FileVideoScanner, VideoThumbnailLoader, CharsetNormalizer, SubtitleCache
 │   ├── preferences/                   (target) DataStore-backed settings
-│   └── repository/                    FileStorageRepository, PreferencesPlaybackProgressRepository
+│   └── repository/                    FileStorageRepository, PreferencesPlaybackProgressRepository,
+│                                      CachedSubtitleRepository, PreferencesVideoPreferencesRepository, PreferencesSettingsRepository
 ├── di/                                DatabaseModule, DispatcherModule, PlayerModule, RepositoryModule
 └── feature/
     ├── onboarding/                    OnboardingRoute, OnboardingScreen, OnboardingViewModel (first-run storage access)
@@ -59,7 +61,8 @@ app/src/main/java/app/subtle/player/
     ├── browse/                        BrowseRoute, BrowseScreen, BrowseViewModel, BrowseUiState (folder tree)
     ├── player/                        PlayerRoute, PlayerScreen, PlayerViewModel, PlayerUiState,
     │                                  controls/, gestures/, subtitle/ (sheet)
-    └── settings/                      SettingsRoute, SettingsScreen, SettingsViewModel
+    ├── settings/                      SettingsRoute, SettingsScreen, SettingsViewModel (theme, dynamic color, decoding)
+    └── about/                         AboutRoute, AboutScreen (open-source licenses, libVLC LGPL notice)
 ```
 
 Resources: `app/src/main/res/values/strings.xml`, `values-in/strings.xml`, `xml/` for backup rules.
@@ -155,7 +158,7 @@ Target schema (once scanning is indexed): Room 3 database `subtle.db`, schema ex
 | `PlaybackProgressEntity` | `videoId` (PK, FK), `positionMs`, `durationMs`, `updatedAt`, `watched` |
 | `VideoPreferenceEntity` | `videoId` (PK, FK), `subtitleDelayMs`, `audioDelayMs`, `selectedSubtitleKey?`, `selectedAudioKey?`, `hasHardSubs`, `charsetOverride?` |
 
-Settings (target): DataStore — theme, default subtitle language, default `SubtitleStyle`, force software decoding, aspect ratio default.
+Settings (implemented): `SharedPreferences` behind `SettingsRepository` — theme (system/light/dark), dynamic color, force software decoding. Read at startup by `MainActivity` (theme) and by `PlayerViewModel` before creating the engine (`PlayerConfig.forceSoftwareDecoding`).
 
 Thumbnails: generated lazily with `MediaMetadataRetriever` on the IO dispatcher, cached to `cacheDir/thumbs/` and loaded by the image loader. They are disposable; never store them in the database.
 

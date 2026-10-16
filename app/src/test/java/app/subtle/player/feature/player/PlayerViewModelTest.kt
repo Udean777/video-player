@@ -10,12 +10,19 @@ import app.subtle.player.core.player.PlayerControllerFactory
 import app.subtle.player.core.player.PlayerError
 import app.subtle.player.core.player.PlayerState
 import app.subtle.player.core.player.SubtitleSource
+import app.subtle.player.core.player.Track
+import app.subtle.player.domain.model.AppSettings
 import app.subtle.player.domain.model.DirectoryContent
 import app.subtle.player.domain.model.PlaybackProgress
+import app.subtle.player.domain.model.SubtitleFile
 import app.subtle.player.domain.model.Video
+import app.subtle.player.domain.model.VideoPreferences
 import app.subtle.player.domain.repository.StorageRepository
+import app.subtle.player.domain.repository.SubtitleRepository
+import app.subtle.player.domain.repository.VideoPreferencesRepository
 import app.subtle.player.engine.vlc.buildVlcArgs
 import app.subtle.player.feature.common.FakePlaybackProgressRepository
+import app.subtle.player.feature.common.FakeSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +52,9 @@ class PlayerViewModelTest {
     private lateinit var fakeController: FakePlayerController
     private lateinit var storage: FakeStorageRepository
     private lateinit var progress: FakePlaybackProgressRepository
+    private lateinit var subtitles: FakeSubtitleRepository
+    private lateinit var preferences: FakeVideoPreferencesRepository
+    private lateinit var settings: FakeSettingsRepository
 
     @Before
     fun setUp() {
@@ -52,6 +62,9 @@ class PlayerViewModelTest {
         fakeController = FakePlayerController()
         storage = FakeStorageRepository()
         progress = FakePlaybackProgressRepository()
+        subtitles = FakeSubtitleRepository()
+        preferences = FakeVideoPreferencesRepository()
+        settings = FakeSettingsRepository()
     }
 
     @After
@@ -113,7 +126,16 @@ class PlayerViewModelTest {
     @Test
     fun controllerFactoryFailureSurfacesFatalError() = runTest {
         val failingFactory = PlayerControllerFactory { throw IllegalStateException("no engine") }
-        val viewModel = PlayerViewModel(failingFactory, storage, progress, SavedStateHandle(), testDispatcher)
+        val viewModel = PlayerViewModel(
+            failingFactory,
+            storage,
+            progress,
+            subtitles,
+            preferences,
+            settings,
+            SavedStateHandle(),
+            testDispatcher,
+        )
         viewModel.open("content://media/video/1".toUri())
         advanceUntilIdle()
 
@@ -255,8 +277,60 @@ class PlayerViewModelTest {
     }
 
     @Test
-    fun contentUriHasNoSiblings() = runTest {
+    fun selectSubtitleTrackDelegatesToController() = runTest {
         val viewModel = viewModel()
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+
+        viewModel.selectSubtitleTrack(3)
+        advanceUntilIdle()
+
+        assertEquals(3, fakeController.selectedSubtitleId)
+    }
+
+    @Test
+    fun adjustSubtitleDelayAppliesAndPersists() = runTest {
+        val uri = "content://media/video/1".toUri()
+        val viewModel = viewModel()
+        viewModel.open(uri)
+        advanceUntilIdle()
+
+        viewModel.adjustSubtitleDelay(100L)
+        advanceUntilIdle()
+
+        assertEquals(100L, fakeController.lastSubtitleDelayMs)
+        assertEquals(100L, preferences.saved[uri.toString()]?.subtitleDelayMs)
+    }
+
+    @Test
+    fun hardSubsDisablesSubtitlesAndPersists() = runTest {
+        val uri = "content://media/video/1".toUri()
+        val viewModel = viewModel()
+        viewModel.open(uri)
+        advanceUntilIdle()
+
+        viewModel.setHardSubs(true)
+        advanceUntilIdle()
+
+        assertEquals(Track.DISABLED_ID, fakeController.selectedSubtitleId)
+        assertTrue(preferences.saved[uri.toString()]?.hasHardSubs == true)
+    }
+
+    @Test
+    fun loadSubtitlePreparesAndAddsToController() = runTest {
+        subtitles.prepared = "file:///cache/subs/x.srt"
+        val viewModel = viewModel()
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+
+        viewModel.loadSubtitle(SubtitleFile("file:///x.srt", "x.srt", null))
+        advanceUntilIdle()
+
+        assertEquals("file:///cache/subs/x.srt", fakeController.addedSubtitleUri)
+    }
+
+    @Test
+    fun contentUriHasNoSiblings() = runTest {        val viewModel = viewModel()
         viewModel.open("content://media/video/1".toUri())
         advanceUntilIdle()
 
@@ -270,9 +344,38 @@ class PlayerViewModelTest {
         assertTrue(buildVlcArgs(PlayerConfig()).isEmpty())
     }
 
+    @Test
+    fun forceSoftwareDecodingSettingReachesEngine() = runTest {
+        settings = FakeSettingsRepository(AppSettings(forceSoftwareDecoding = true))
+        var captured: PlayerConfig? = null
+        val viewModel = PlayerViewModel(
+            PlayerControllerFactory { config -> captured = config; fakeController },
+            storage,
+            progress,
+            subtitles,
+            preferences,
+            settings,
+            SavedStateHandle(),
+            testDispatcher,
+        )
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+
+        assertEquals(true, captured?.forceSoftwareDecoding)
+    }
+
     private fun viewModel(savedStateHandle: SavedStateHandle = SavedStateHandle()): PlayerViewModel {
         val factory = PlayerControllerFactory { fakeController }
-        return PlayerViewModel(factory, storage, progress, savedStateHandle, testDispatcher)
+        return PlayerViewModel(
+            factory,
+            storage,
+            progress,
+            subtitles,
+            preferences,
+            settings,
+            savedStateHandle,
+            testDispatcher,
+        )
     }
 }
 
@@ -280,8 +383,23 @@ private fun video(uri: String, name: String) = Video(uri = uri, displayName = na
 
 private class FakeStorageRepository : StorageRepository {
     var directoryContent = DirectoryContent(displayName = "", folders = emptyList(), videos = emptyList())
+    var subtitleFiles: List<SubtitleFile> = emptyList()
     override suspend fun allVideos(): List<Video> = directoryContent.videos
     override suspend fun listDirectory(path: String?): DirectoryContent = directoryContent
+    override suspend fun subtitlesFor(videoUri: String): List<SubtitleFile> = subtitleFiles
+}
+
+private class FakeSubtitleRepository : SubtitleRepository {
+    var prepared = "file:///cache/subs/prepared.srt"
+    override suspend fun prepareForPlayback(subtitle: SubtitleFile, charsetOverride: String?): String = prepared
+}
+
+private class FakeVideoPreferencesRepository : VideoPreferencesRepository {
+    val saved = mutableMapOf<String, VideoPreferences>()
+    override suspend fun get(videoUri: String): VideoPreferences = saved[videoUri] ?: VideoPreferences()
+    override suspend fun save(videoUri: String, preferences: VideoPreferences) {
+        saved[videoUri] = preferences
+    }
 }
 
 private class FakePlayerController : PlayerController {
@@ -294,6 +412,11 @@ private class FakePlayerController : PlayerController {
     var playCalls = 0
     var pauseCalls = 0
     var lastSeekMs: Long? = null
+    var selectedSubtitleId: Int? = null
+    var selectedAudioId: Int? = null
+    var lastSubtitleDelayMs: Long? = null
+    var lastAudioDelayMs: Long? = null
+    var addedSubtitleUri: String? = null
     var released = false
 
     fun emit(value: PlayerState) {
@@ -320,11 +443,26 @@ private class FakePlayerController : PlayerController {
     }
 
     override fun setSpeed(rate: Float) = Unit
-    override fun selectAudioTrack(id: Int) = Unit
-    override fun selectSubtitleTrack(id: Int) = Unit
-    override suspend fun addExternalSubtitle(source: SubtitleSource, select: Boolean) = Unit
-    override fun setSubtitleDelay(delayMs: Long) = Unit
-    override fun setAudioDelay(delayMs: Long) = Unit
+    override fun selectAudioTrack(id: Int) {
+        selectedAudioId = id
+    }
+
+    override fun selectSubtitleTrack(id: Int) {
+        selectedSubtitleId = id
+    }
+
+    override suspend fun addExternalSubtitle(source: SubtitleSource, select: Boolean) {
+        addedSubtitleUri = (source as SubtitleSource.Content).uri.toString()
+    }
+
+    override fun setSubtitleDelay(delayMs: Long) {
+        lastSubtitleDelayMs = delayMs
+    }
+
+    override fun setAudioDelay(delayMs: Long) {
+        lastAudioDelayMs = delayMs
+    }
+
     override fun attachSurface(container: android.view.ViewGroup) = Unit
     override fun detachSurface() = Unit
     override fun release() {

@@ -11,8 +11,12 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -37,6 +41,7 @@ fun HomeScreen(
     onViewModeChange: (BrowserViewMode) -> Unit,
     onRefresh: () -> Unit,
     onVideoClick: (Video) -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -45,6 +50,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.tab_home)) },
                 actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, stringResource(R.string.settings_title))
+                    }
                     BrowserActions(
                         mode = state.viewMode,
                         onViewModeChange = onViewModeChange,
@@ -115,6 +123,7 @@ private fun HomePreview() {
             onViewModeChange = {},
             onRefresh = {},
             onVideoClick = {},
+            onOpenSettings = {},
         )
     }
 }
@@ -134,6 +143,7 @@ private fun HomeGridPreview() {
             onViewModeChange = {},
             onRefresh = {},
             onVideoClick = {},
+            onOpenSettings = {},
         )
     }
 }

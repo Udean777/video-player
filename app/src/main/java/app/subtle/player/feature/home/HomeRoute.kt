@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun HomeRoute(
     onVideoClick: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = viewModel(),
 ) {
@@ -19,6 +20,7 @@ fun HomeRoute(
         onViewModeChange = viewModel::setViewMode,
         onRefresh = viewModel::refresh,
         onVideoClick = { onVideoClick(it.uri) },
+        onOpenSettings = onOpenSettings,
         modifier = modifier,
     )
 }

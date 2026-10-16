@@ -1,9 +1,11 @@
 package app.subtle.player.feature.player
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.widget.FrameLayout
 import androidx.annotation.StringRes
@@ -32,11 +34,14 @@ import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -79,6 +84,8 @@ fun PlayerScreen(
     controller: PlayerController?,
     sliderPositionMs: Long,
     onOpenFile: () -> Unit,
+    onOpenSubtitles: () -> Unit,
+    onOpenPlayback: () -> Unit,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onRestart: () -> Unit,
@@ -94,6 +101,15 @@ fun PlayerScreen(
     val playing = state.player.status == PlayerState.Status.Playing
     var controlsVisible by remember { mutableStateOf(true) }
     var orientationLocked by rememberSaveable { mutableStateOf(false) }
+    val view = LocalView.current
+    val activity = remember(view) { view.context.findActivity() }
+    val pipAvailable = remember(activity) {
+        activity?.packageManager?.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) == true
+    }
+    val enterPip = {
+        controlsVisible = false
+        enterPictureInPicture(activity)
+    }
 
     // Bars show with the controls and hide for immersive playback.
     PlayerSystemBars(controlsVisible)
@@ -152,6 +168,9 @@ fun PlayerScreen(
                 onToggleOrientationLock = { orientationLocked = !orientationLocked },
                 onClose = onClose,
                 onOpenFile = onOpenFile,
+                onOpenSubtitles = onOpenSubtitles,
+                onOpenPlayback = onOpenPlayback,
+                onEnterPip = if (pipAvailable) enterPip else null,
                 onPlay = onPlay,
                 onPause = onPause,
                 onRestart = onRestart,
@@ -174,6 +193,9 @@ private fun BoxScope.PlayerControls(
     onToggleOrientationLock: () -> Unit,
     onClose: (() -> Unit)?,
     onOpenFile: () -> Unit,
+    onOpenSubtitles: () -> Unit,
+    onOpenPlayback: () -> Unit,
+    onEnterPip: (() -> Unit)?,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onRestart: () -> Unit,
@@ -209,6 +231,17 @@ private fun BoxScope.PlayerControls(
             )
             IconButton(onClick = onRestart) {
                 Icon(Icons.Filled.RestartAlt, stringResource(R.string.restart_video), tint = Color.White)
+            }
+            IconButton(onClick = onOpenSubtitles) {
+                Icon(Icons.Filled.Subtitles, stringResource(R.string.subtitles_title), tint = Color.White)
+            }
+            IconButton(onClick = onOpenPlayback) {
+                Icon(Icons.Filled.Tune, stringResource(R.string.playback_title), tint = Color.White)
+            }
+            if (onEnterPip != null) {
+                IconButton(onClick = onEnterPip) {
+                    Icon(Icons.Filled.PictureInPicture, stringResource(R.string.pip), tint = Color.White)
+                }
             }
             IconButton(onClick = onToggleOrientationLock) {
                 Icon(
@@ -357,6 +390,13 @@ private fun Context.findActivity(): Activity? {
     return null
 }
 
+private fun enterPictureInPicture(activity: Activity?) {
+    activity ?: return
+    runCatching {
+        activity.enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+    }
+}
+
 private fun formatTime(positionMs: Long): String {
     val totalSeconds = (positionMs.coerceAtLeast(0L) / 1000).toInt()
     val hours = totalSeconds / 3600
@@ -405,6 +445,8 @@ private fun PreviewPlayer(state: PlayerUiState) {
         controller = null,
         sliderPositionMs = state.player.positionMs,
         onOpenFile = {},
+        onOpenSubtitles = {},
+        onOpenPlayback = {},
         onPlay = {},
         onPause = {},
         onRestart = {},

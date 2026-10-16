@@ -12,10 +12,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.subtle.player.R
@@ -26,14 +22,15 @@ enum class MainTab { Home, Browse }
 
 @Composable
 fun MainRoute(
+    tabIndex: Int,
+    onTabChange: (Int) -> Unit,
     onVideoClick: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var tabIndex by rememberSaveable { mutableIntStateOf(0) }
-
     // Browse's own handler (enabled inside a folder) stays on top of this one.
     BackHandler(enabled = tabIndex == MainTab.Browse.ordinal) {
-        tabIndex = MainTab.Home.ordinal
+        onTabChange(MainTab.Home.ordinal)
     }
 
     Scaffold(
@@ -45,13 +42,13 @@ fun MainRoute(
             NavigationBar {
                 NavigationBarItem(
                     selected = tabIndex == MainTab.Home.ordinal,
-                    onClick = { tabIndex = MainTab.Home.ordinal },
+                    onClick = { onTabChange(MainTab.Home.ordinal) },
                     icon = { Icon(Icons.Filled.Home, contentDescription = null) },
                     label = { Text(stringResource(R.string.tab_home)) },
                 )
                 NavigationBarItem(
                     selected = tabIndex == MainTab.Browse.ordinal,
-                    onClick = { tabIndex = MainTab.Browse.ordinal },
+                    onClick = { onTabChange(MainTab.Browse.ordinal) },
                     icon = { Icon(Icons.Filled.Folder, contentDescription = null) },
                     label = { Text(stringResource(R.string.tab_browse)) },
                 )
@@ -60,7 +57,11 @@ fun MainRoute(
     ) { padding ->
         val contentModifier = Modifier.padding(padding)
         when (MainTab.entries[tabIndex]) {
-            MainTab.Home -> HomeRoute(onVideoClick = onVideoClick, modifier = contentModifier)
+            MainTab.Home -> HomeRoute(
+                onVideoClick = onVideoClick,
+                onOpenSettings = onOpenSettings,
+                modifier = contentModifier,
+            )
             MainTab.Browse -> BrowseRoute(onVideoClick = onVideoClick, modifier = contentModifier)
         }
     }

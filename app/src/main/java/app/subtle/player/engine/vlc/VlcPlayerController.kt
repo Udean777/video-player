@@ -202,7 +202,8 @@ internal class VlcPlayerController(
             ),
         )
         // The layout (not a bare SurfaceView) lets libVLC size and centre the video itself.
-        player.attachViews(videoLayout, null, false, false)
+        // Subtitles on the layout: text styling and image subs (PGS/VobSub) only render with this true.
+        player.attachViews(videoLayout, null, true, false)
     }
 
     override fun detachSurface() {

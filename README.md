@@ -11,7 +11,7 @@ Play anything local. Offline-first. No account, no analytics, no network.
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Engine](https://img.shields.io/badge/engine-libVLC%203.7-FF8800)](https://www.videolan.org/vlc/libvlc.html)
 [![minSdk](https://img.shields.io/badge/minSdk-26-blue)](#requirements)
-[![Status](https://img.shields.io/badge/status-early%20development-orange)](#status)
+[![Status](https://img.shields.io/badge/status-early%20development-orange)](#features)
 
 </div>
 
@@ -21,24 +21,10 @@ Play anything local. Offline-first. No account, no analytics, no network.
 
 Subtle is a local video player for Android in the spirit of VLC — but with the subtitle
 experience treated as the main event rather than a buried menu. It plays the files you
-already have, remembers where you stopped, and (soon) makes embedded and external
-subtitles easy to select, retime and style.
+already have, remembers where you stopped, and makes embedded and external subtitles easy
+to select and retime.
 
 Everything stays on your device. There is no network permission in the app.
-
-## Status
-
-Early development. The foundation and library browsing work; subtitles are next.
-
-| Area | State |
-|---|---|
-| Storage access + onboarding | ✅ |
-| Home (all videos) & Browse (folder tree) | ✅ |
-| List / grid with thumbnails | ✅ |
-| Fullscreen player (play, pause, seek, ±10 s, prev/next) | ✅ |
-| Resume + watched progress | ✅ |
-| Subtitles (embedded, external, styling) | 🚧 planned |
-| Settings, gesture layer, PiP, audio tracks | 🚧 planned |
 
 See [`docs/PRD.md`](docs/PRD.md) for the full scope and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design.
 
@@ -52,12 +38,14 @@ See [`docs/PRD.md`](docs/PRD.md) for the full scope and [`docs/ARCHITECTURE.md`]
 - Seek bar, skip controls for ±10 s, previous/next video within the folder.
 - Resume playback where you left off, with a progress bar in the library.
 - Finished videos clear their position instead of lingering at 100%.
+- Embedded and external subtitle tracks, delay adjustment, charset detection, hard-sub mode.
+- Audio track selection, audio delay, playback speed (0.5×–4×), picture-in-picture.
+- Settings: theme (system/light/dark), dynamic color, force software decoding.
+- English and Indonesian localization; About screen with the libVLC LGPL notice.
 
 **Roadmap**
-- Embedded and external subtitle tracks, charset detection, delay and styling.
-- Hard-subtitle mode for releases with burned-in subs.
-- Gestures (brightness, volume, seek), audio track selection, playback speed.
-- Picture-in-picture, settings, and full English/Indonesian localization.
+- Subtitle styling (size, color, outline, position).
+- Gesture layer (brightness, volume, seek).
 
 ## Tech stack
 
@@ -137,7 +125,7 @@ app/src/main/java/app/subtle/player/
 ├── data/                storage/ repository/            (local/ + preferences/ planned)
 ├── domain/              model/ repository/              (pure Kotlin; usecase/ planned)
 ├── di/                  Hilt modules
-└── feature/             onboarding/ main/ home/ browse/ player/ common/
+└── feature/             onboarding/ main/ home/ browse/ player/ settings/ about/ common/
 ```
 
 ## Privacy
@@ -152,7 +140,7 @@ Subtle is offline by design:
 
 The app is under development and its distribution license is not final.
 It bundles **libVLC for Android**, which is licensed under **LGPL-2.1**. libVLC is used
-dynamically linked as shipped; the license screen (Settings → About, planned) will carry
+dynamically linked as shipped; the app's About screen (Settings → About) carries
 the LGPL notice and a link to the libVLC source.
 
 ## Documentation
