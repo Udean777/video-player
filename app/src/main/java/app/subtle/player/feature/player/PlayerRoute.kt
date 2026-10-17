@@ -96,6 +96,8 @@ fun PlayerRoute(
         onNext = viewModel::next,
         onSkipBackward = viewModel::skipBackward,
         onSkipForward = viewModel::skipForward,
+        onScrub = viewModel::seekTo,
+        onVolumeChange = viewModel::setVolume,
         onSliderChange = {
             dragging = true
             dragPositionMs = it
@@ -130,6 +132,7 @@ fun PlayerRoute(
             onAudioDelayDelta = viewModel::adjustAudioDelay,
             onResetAudioDelay = viewModel::resetAudioDelay,
             onSpeedChange = viewModel::setSpeed,
+            onAspectRatioChange = viewModel::setAspectRatio,
         )
     }
 }

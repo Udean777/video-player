@@ -7,12 +7,14 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,8 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
@@ -42,11 +47,13 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,7 +61,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,12 +80,17 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import app.subtle.player.MainActivity
 import app.subtle.player.R
 import app.subtle.player.core.designsystem.SubtleTheme
 import app.subtle.player.core.player.PlayerController
 import app.subtle.player.core.player.PlayerError
 import app.subtle.player.core.player.PlayerState
+import app.subtle.player.feature.player.gesture.GestureMath
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(
@@ -93,6 +107,8 @@ fun PlayerScreen(
     onNext: () -> Unit,
     onSkipBackward: () -> Unit,
     onSkipForward: () -> Unit,
+    onScrub: (Long) -> Unit,
+    onVolumeChange: (Int) -> Unit,
     onSliderChange: (Long) -> Unit,
     onSliderChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
@@ -100,7 +116,9 @@ fun PlayerScreen(
 ) {
     val playing = state.player.status == PlayerState.Status.Playing
     var controlsVisible by remember { mutableStateOf(true) }
-    var orientationLocked by rememberSaveable { mutableStateOf(false) }
+    var locked by rememberSaveable { mutableStateOf(false) }
+    var hud by remember { mutableStateOf<GestureHud?>(null) }
+    val scope = rememberCoroutineScope()
     val view = LocalView.current
     val activity = remember(view) { view.context.findActivity() }
     val pipAvailable = remember(activity) {
@@ -111,10 +129,23 @@ fun PlayerScreen(
         enterPictureInPicture(activity)
     }
 
+    // Leaving the app with home or recents should collapse the player into PiP instead of
+    // stopping the video. Only registered while a video is open.
+    val pipHost = activity as? MainActivity
+    DisposableEffect(pipHost, pipAvailable, state.videoUri) {
+        pipHost?.leaveToPip = if (pipAvailable && state.videoUri != null) enterPip else null
+        onDispose { pipHost?.leaveToPip = null }
+    }
+
+    val showControls = controlsVisible && !locked
+    val currentVolume by rememberUpdatedState(state.player.volume)
+    val currentPosition by rememberUpdatedState(state.player.positionMs)
+    val currentDuration by rememberUpdatedState(state.player.durationMs)
+
     // Bars show with the controls and hide for immersive playback.
-    PlayerSystemBars(controlsVisible)
-    // Follow the device by default; locking freezes the current orientation.
-    PlayerOrientation(orientationLocked)
+    PlayerSystemBars(showControls)
+    // Locking also freezes the orientation.
+    PlayerOrientation(locked)
     KeepScreenOn(playing)
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
@@ -127,16 +158,89 @@ fun PlayerScreen(
         val attached = container.value
         if (attached != null) {
             DisposableEffect(attached, controller) {
+                // Keep the surface bound for the life of this screen. libVLC's AWindow follows the
+                // SurfaceHolder through background/PiP on its own; detaching on stop and reattaching
+                // on start leaves the video output dead ("can't get Video Surface").
                 controller?.attachSurface(attached)
                 onDispose { controller?.detachSurface() }
             }
         }
 
-        // Tap anywhere to toggle the controls; only interactive overlay children consume taps.
+        // Surface-level gestures. Single tap toggles the controls, double tap seeks ±10 s,
+        // horizontal drag scrubs, vertical drag adjusts brightness (left) or volume (right).
+        // Disabled while the controls are locked.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) { detectTapGestures(onTap = { controlsVisible = !controlsVisible }) },
+                .pointerInput(locked) {
+                    if (locked) return@pointerInput
+                    detectTapGestures(
+                        onTap = { controlsVisible = !controlsVisible },
+                        onDoubleTap = { offset ->
+                            if (state.videoUri != null) {
+                                val forward = offset.x > size.width / 2f
+                                if (forward) onSkipForward() else onSkipBackward()
+                                hud = GestureHud.Seek(forward)
+                                scope.launch { delay(HUD_LINGER_MS); hud = null }
+                            }
+                        },
+                    )
+                }
+                .pointerInput(locked) {
+                    if (locked) return@pointerInput
+                    var axis = Axis.None
+                    var onLeft = true
+                    var accX = 0f
+                    var accY = 0f
+                    var startBrightness = 1f
+                    var startVolume = 100
+                    var startPosition = 0L
+                    var scrubTarget = 0L
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            axis = Axis.None
+                            accX = 0f
+                            accY = 0f
+                            onLeft = offset.x < size.width / 2f
+                            startBrightness = activity.currentBrightness()
+                            startVolume = currentVolume
+                            startPosition = currentPosition
+                        },
+                        onDrag = { change, dragAmount ->
+                            accX += dragAmount.x
+                            accY += dragAmount.y
+                            if (axis == Axis.None && (abs(accX) > viewConfiguration.touchSlop || abs(accY) > viewConfiguration.touchSlop)) {
+                                axis = if (abs(accX) > abs(accY)) Axis.Horizontal else Axis.Vertical
+                            }
+                            when (axis) {
+                                Axis.Horizontal -> {
+                                    scrubTarget = GestureMath.seekFromDrag(
+                                        startPosition,
+                                        currentDuration,
+                                        accX / size.width,
+                                    )
+                                    hud = GestureHud.Scrub(scrubTarget)
+                                }
+                                Axis.Vertical -> if (onLeft) {
+                                    val value = GestureMath.brightnessFromDrag(startBrightness, accY / size.height)
+                                    activity.applyBrightness(value)
+                                    hud = GestureHud.Brightness(value)
+                                } else {
+                                    val value = GestureMath.volumeFromDrag(startVolume, accY / size.height)
+                                    onVolumeChange(value)
+                                    hud = GestureHud.Volume(value)
+                                }
+                                Axis.None -> Unit
+                            }
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            if (axis == Axis.Horizontal) onScrub(scrubTarget)
+                            scope.launch { delay(HUD_LINGER_MS); hud = null }
+                        },
+                        onDragCancel = { hud = null },
+                    )
+                },
         )
 
         if (state.videoUri == null) {
@@ -156,7 +260,7 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = showControls,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize(),
@@ -164,8 +268,11 @@ fun PlayerScreen(
             PlayerControls(
                 state = state,
                 sliderPositionMs = sliderPositionMs,
-                orientationLocked = orientationLocked,
-                onToggleOrientationLock = { orientationLocked = !orientationLocked },
+                locked = locked,
+                onToggleLock = {
+                    locked = !locked
+                    if (locked) controlsVisible = false
+                },
                 onClose = onClose,
                 onOpenFile = onOpenFile,
                 onOpenSubtitles = onOpenSubtitles,
@@ -182,6 +289,22 @@ fun PlayerScreen(
                 onSliderChangeFinished = onSliderChangeFinished,
             )
         }
+
+        if (locked) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.5f)) {
+                    IconButton(onClick = { locked = false }) {
+                        Icon(
+                            Icons.Filled.LockOpen,
+                            contentDescription = stringResource(R.string.unlock_controls),
+                            tint = Color.White,
+                        )
+                    }
+                }
+            }
+        }
+
+        hud?.let { GestureHudOverlay(it) }
     }
 }
 
@@ -189,8 +312,8 @@ fun PlayerScreen(
 private fun BoxScope.PlayerControls(
     state: PlayerUiState,
     sliderPositionMs: Long,
-    orientationLocked: Boolean,
-    onToggleOrientationLock: () -> Unit,
+    locked: Boolean,
+    onToggleLock: () -> Unit,
     onClose: (() -> Unit)?,
     onOpenFile: () -> Unit,
     onOpenSubtitles: () -> Unit,
@@ -243,11 +366,11 @@ private fun BoxScope.PlayerControls(
                     Icon(Icons.Filled.PictureInPicture, stringResource(R.string.pip), tint = Color.White)
                 }
             }
-            IconButton(onClick = onToggleOrientationLock) {
+            IconButton(onClick = onToggleLock) {
                 Icon(
-                    imageVector = if (orientationLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                    imageVector = if (locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
                     contentDescription = stringResource(
-                        if (orientationLocked) R.string.unlock_orientation else R.string.lock_orientation,
+                        if (locked) R.string.unlock_controls else R.string.lock_controls,
                     ),
                     tint = Color.White,
                 )
@@ -409,7 +532,69 @@ private fun formatTime(positionMs: Long): String {
     }
 }
 
+/** Reads the activity brightness, treating "follow system" (-1) as fully bright. */
+private fun Activity?.currentBrightness(): Float {
+    val value = this?.window?.attributes?.screenBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+    return if (value in 0.01f..1f) value else 1f
+}
+
+private fun Activity?.applyBrightness(value: Float) {
+    val activity = this ?: return
+    val attributes = activity.window.attributes
+    attributes.screenBrightness = value
+    activity.window.attributes = attributes
+}
+
+private enum class Axis { None, Horizontal, Vertical }
+
+private sealed interface GestureHud {
+    data class Brightness(val value: Float) : GestureHud
+    data class Volume(val value: Int) : GestureHud
+    data class Scrub(val targetMs: Long) : GestureHud
+    data class Seek(val forward: Boolean) : GestureHud
+}
+
+@Composable
+private fun GestureHudOverlay(hud: GestureHud) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Surface(color = Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp)) {
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                when (hud) {
+                    is GestureHud.Brightness -> {
+                        Icon(Icons.Filled.BrightnessMedium, contentDescription = null, tint = Color.White)
+                        Text("${(hud.value * 100).roundToInt()}%", color = Color.White)
+                    }
+                    is GestureHud.Volume -> {
+                        Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White)
+                        Text("${hud.value}%", color = Color.White)
+                    }
+                    is GestureHud.Scrub -> {
+                        Icon(Icons.Filled.Forward10, contentDescription = null, tint = Color.White)
+                        Text(formatTime(hud.targetMs), color = Color.White)
+                    }
+                    is GestureHud.Seek -> {
+                        Icon(
+                            imageVector = if (hud.forward) Icons.Filled.Forward10 else Icons.Filled.Replay10,
+                            contentDescription = null,
+                            tint = Color.White,
+                        )
+                        Text(
+                            text = stringResource(if (hud.forward) R.string.forward_10 else R.string.rewind_10),
+                            color = Color.White,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 private const val CONTROLS_TIMEOUT_MS = 3_000L
+private const val HUD_LINGER_MS = 400L
 
 @Preview(showBackground = true)
 @Composable
@@ -454,6 +639,8 @@ private fun PreviewPlayer(state: PlayerUiState) {
         onNext = {},
         onSkipBackward = {},
         onSkipForward = {},
+        onScrub = {},
+        onVolumeChange = {},
         onSliderChange = {},
         onSliderChangeFinished = {},
     )

@@ -6,15 +6,19 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.subtle.player.core.common.PlayerDispatcher
+import app.subtle.player.core.player.AspectRatio
 import app.subtle.player.core.player.MediaSource
 import app.subtle.player.core.player.PlayerConfig
 import app.subtle.player.core.player.PlayerController
 import app.subtle.player.core.player.PlayerControllerFactory
 import app.subtle.player.core.player.PlayerError
 import app.subtle.player.core.player.PlayerState
+import app.subtle.player.core.player.PlaybackHolder
 import app.subtle.player.core.player.SubtitleSource
 import app.subtle.player.core.player.Track
 import app.subtle.player.domain.model.SubtitleFile
+import app.subtle.player.domain.model.SubtitleLanguage
+import app.subtle.player.domain.model.SubtitleStyle
 import app.subtle.player.domain.model.Video
 import app.subtle.player.domain.model.VideoPreferences
 import app.subtle.player.domain.repository.PlaybackProgressRepository
@@ -22,6 +26,7 @@ import app.subtle.player.domain.repository.SettingsRepository
 import app.subtle.player.domain.repository.StorageRepository
 import app.subtle.player.domain.repository.SubtitleRepository
 import app.subtle.player.domain.repository.VideoPreferencesRepository
+import app.subtle.player.domain.usecase.SubtitleLanguageMatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
@@ -45,6 +50,7 @@ class PlayerViewModel @Inject constructor(
     private val subtitleRepository: SubtitleRepository,
     private val preferencesRepository: VideoPreferencesRepository,
     private val settingsRepository: SettingsRepository,
+    private val playbackHolder: PlaybackHolder,
     private val savedStateHandle: SavedStateHandle,
     @PlayerDispatcher private val playerDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -81,7 +87,13 @@ class PlayerViewModel @Inject constructor(
     private var lastAutoSaveMs = 0L
     private var delaysApplied = false
     private var hardSubsApplied = false
+    private var languageApplied = false
+    private var subtitlesDiscovered = false
     private var forceSoftwareDecoding = false
+    private var subtitleStyle = SubtitleStyle()
+    private var subtitleLanguage = SubtitleLanguage.None
+    private var autoPlayNext = true
+    private var endedHandled = false
     private val _controllerFlow = MutableStateFlow<PlayerController?>(null)
 
     /** Emits the active controller so the UI can bind the video output once it exists. */
@@ -112,11 +124,18 @@ class PlayerViewModel @Inject constructor(
         _videoPreferences.value = VideoPreferences()
         delaysApplied = false
         hardSubsApplied = false
+        languageApplied = false
+        subtitlesDiscovered = false
+        endedHandled = false
         loadJob?.cancel()
         // LibVLC construction and the first decode are heavy; keep them off the main thread.
         loadJob = viewModelScope.launch(playerDispatcher) {
-            forceSoftwareDecoding = runCatching { settingsRepository.settings.first().forceSoftwareDecoding }
-                .getOrDefault(forceSoftwareDecoding)
+            runCatching { settingsRepository.settings.first() }.onSuccess {
+                forceSoftwareDecoding = it.forceSoftwareDecoding
+                subtitleStyle = it.subtitleStyle
+                subtitleLanguage = it.subtitleLanguage
+                autoPlayNext = it.autoPlayNext
+            }
             val active = controller ?: createController() ?: return@launch
             val startMs = runCatching { progressRepository.get(uri.toString())?.resumePositionMs() ?: 0L }
                 .getOrDefault(0L)
@@ -177,6 +196,14 @@ class PlayerViewModel @Inject constructor(
         controller?.setSpeed(rate)
     }
 
+    fun setVolume(level: Int) {
+        controller?.setVolume(level)
+    }
+
+    fun setAspectRatio(ratio: AspectRatio) {
+        controller?.setAspectRatio(ratio)
+    }
+
     fun adjustSubtitleDelay(deltaMs: Long) {
         val next = (_playerState.value.subtitleDelayMs + deltaMs).coerceIn(-MAX_DELAY_MS, MAX_DELAY_MS)
         controller?.setSubtitleDelay(next)
@@ -231,6 +258,7 @@ class PlayerViewModel @Inject constructor(
         _controllerFlow.value = null
         _playerState.value = PlayerState()
         lastAutoSaveMs = 0L
+        playbackHolder.detach()
     }
 
     override fun onCleared() {
@@ -251,6 +279,7 @@ class PlayerViewModel @Inject constructor(
                 .getOrDefault(emptyList())
             _playlist.value = videos
             _index.value = videos.indexOfFirst { it.uri == uri.toString() }
+            syncNowPlaying()
         }
     }
 
@@ -259,6 +288,14 @@ class PlayerViewModel @Inject constructor(
             val subtitles = runCatching { storageRepository.subtitlesFor(videoUri) }
                 .getOrDefault(emptyList())
             _externalSubtitles.value = subtitles
+            subtitlesDiscovered = true
+            if (subtitleLanguage != SubtitleLanguage.None) {
+                subtitles.firstOrNull { SubtitleLanguageMatcher.matches(subtitleLanguage, it.languageHint) }
+                    ?.let {
+                        loadSubtitle(it)
+                        languageApplied = true
+                    }
+            }
         }
     }
 
@@ -270,12 +307,21 @@ class PlayerViewModel @Inject constructor(
 
     private fun createController(): PlayerController? =
         try {
-            controllerFactory.create(PlayerConfig(forceSoftwareDecoding = forceSoftwareDecoding)).also { created ->
+            controllerFactory.create(
+                PlayerConfig(forceSoftwareDecoding = forceSoftwareDecoding, subtitleStyle = subtitleStyle),
+            ).also { created ->
                 controller = created
                 _controllerFlow.value = created
+                playbackHolder.attach(created, title())
+                playbackHolder.onTogglePlayPause = {
+                    if (_playerState.value.status == PlayerState.Status.Playing) pause() else play()
+                }
+                playbackHolder.onNext = ::next
+                playbackHolder.onPrevious = ::previous
                 viewModelScope.launch {
                     created.state.collect { state ->
                         _playerState.value = state
+                        syncNowPlaying()
                         maybeAutoSave(state)
                         applyInitialPreferences(state)
                     }
@@ -285,6 +331,18 @@ class PlayerViewModel @Inject constructor(
             _fatalError.value = PlayerError.Engine(e.message)
             null
         }
+
+    private fun title(): String =
+        _videoUri.value?.lastPathSegment?.substringAfterLast('/') ?: _videoUri.value?.toString().orEmpty()
+
+    private fun syncNowPlaying() {
+        playbackHolder.update(
+            title = title(),
+            isPlaying = _playerState.value.status == PlayerState.Status.Playing,
+            hasPrevious = _index.value > 0,
+            hasNext = _index.value in 0..<_playlist.value.size - 1,
+        )
+    }
 
     /** Applies the saved delay and hard-subtitle policy once their prerequisites exist. */
     private fun applyInitialPreferences(state: PlayerState) {
@@ -298,12 +356,26 @@ class PlayerViewModel @Inject constructor(
             hardSubsApplied = true
             controller?.selectSubtitleTrack(Track.DISABLED_ID)
         }
+        if (subtitlesDiscovered && !languageApplied && !prefs.hasHardSubs &&
+            subtitleLanguage != SubtitleLanguage.None && state.subtitleTracks.isNotEmpty()
+        ) {
+            state.subtitleTracks
+                .firstOrNull { SubtitleLanguageMatcher.matches(subtitleLanguage, it.name) }
+                ?.let {
+                    languageApplied = true
+                    controller?.selectSubtitleTrack(it.id)
+                }
+        }
     }
 
     /** Persists progress while playing so a kill or a back press doesn't lose the position. */
     private fun maybeAutoSave(state: PlayerState) {
         if (state.status == PlayerState.Status.Ended) {
-            saveProgress()
+            if (!endedHandled) {
+                endedHandled = true
+                saveProgress()
+                if (autoPlayNext && _index.value < _playlist.value.lastIndex) next()
+            }
             return
         }
         if (state.status != PlayerState.Status.Playing || state.durationMs <= 0L) return

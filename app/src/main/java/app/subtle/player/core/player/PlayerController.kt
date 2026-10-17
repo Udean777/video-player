@@ -1,5 +1,6 @@
 package app.subtle.player.core.player
 
+import app.subtle.player.domain.model.SubtitleStyle
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -18,6 +19,11 @@ interface PlayerController {
     fun seekTo(positionMs: Long)
     fun setSpeed(rate: Float)
 
+    /** Playback volume as a percentage, 0..100. */
+    fun setVolume(level: Int)
+
+    fun setAspectRatio(ratio: AspectRatio)
+
     fun selectAudioTrack(id: Int)
 
     /** Pass [Track.DISABLED_ID] to turn subtitles off. */
@@ -35,7 +41,13 @@ interface PlayerController {
     fun release()
 }
 
-data class PlayerConfig(val forceSoftwareDecoding: Boolean = false)
+data class PlayerConfig(
+    val forceSoftwareDecoding: Boolean = false,
+    val subtitleStyle: SubtitleStyle = SubtitleStyle(),
+)
+
+/** Fit = letterbox; Fill = stretch to the screen; Crop = zoom to fill, hiding the overflow. */
+enum class AspectRatio { Fit, Fill, Crop, Ratio16x9, Ratio4x3 }
 
 fun interface PlayerControllerFactory {
     fun create(config: PlayerConfig): PlayerController
@@ -46,6 +58,8 @@ data class PlayerState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val speed: Float = 1f,
+    val volume: Int = 100,
+    val aspectRatio: AspectRatio = AspectRatio.Fit,
     val isSeekable: Boolean = false,
     val audioTracks: List<Track> = emptyList(),
     val subtitleTracks: List<Track> = emptyList(),

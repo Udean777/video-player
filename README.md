@@ -11,7 +11,6 @@ Play anything local. Offline-first. No account, no analytics, no network.
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Engine](https://img.shields.io/badge/engine-libVLC%203.7-FF8800)](https://www.videolan.org/vlc/libvlc.html)
 [![minSdk](https://img.shields.io/badge/minSdk-26-blue)](#requirements)
-[![Status](https://img.shields.io/badge/status-early%20development-orange)](#features)
 
 </div>
 
@@ -30,22 +29,40 @@ See [`docs/PRD.md`](docs/PRD.md) for the full scope and [`docs/ARCHITECTURE.md`]
 
 ## Features
 
-**Working now**
-- One-time storage access, then browse every video on the device.
+**Library**
+- One-time storage access, then every video on the device is available.
 - Home lists all videos; Browse walks the folder tree VLC-style.
-- List and grid views, thumbnails generated on the fly.
-- Fullscreen player with auto-hiding controls, immersive system bars, and orientation lock.
-- Seek bar, skip controls for ±10 s, previous/next video within the folder.
-- Resume playback where you left off, with a progress bar in the library.
+- Search by name and sort by name, date added, or last played.
+- List and grid views, with thumbnails generated on the fly.
+- Optional series grouping (`S01E02` / `1x02`) with expandable headers.
+- Resume playback where you left off, shown as a progress bar in the library.
 - Finished videos clear their position instead of lingering at 100%.
-- Embedded and external subtitle tracks, delay adjustment, charset detection, hard-sub mode.
-- Audio track selection, audio delay, playback speed (0.5×–4×), picture-in-picture.
-- Settings: theme (system/light/dark), dynamic color, force software decoding.
-- English and Indonesian localization; About screen with the libVLC LGPL notice.
 
-**Roadmap**
-- Subtitle styling (size, color, outline, position).
-- Gesture layer (brightness, volume, seek).
+**Playback**
+- Fullscreen player with auto-hiding controls, immersive system bars, and orientation lock.
+- Seek bar, ±10 s skips, previous/next video in the folder, playback speed 0.5×–4×.
+- Aspect-ratio modes: fit, fill, crop, 16:9, 4:3.
+- Tap and drag gestures for scrubbing, brightness, volume, and locking the controls.
+- Picture-in-picture from the player button, and automatically when leaving the app
+  (Home or Recents) with the player open.
+- Background audio through a foreground playback service, with play/pause and previous/next
+  controls in the notification.
+- Auto-play next episode when one finishes.
+
+**Subtitles**
+- Embedded and external subtitle tracks with instant switching.
+- Delay adjustment, charset detection and override, and a hard-sub mode.
+- Default subtitle language that auto-selects a matching embedded or external track.
+- Styling for size, color, outline, and background, with a live preview.
+- ASS style override for subtitles that carry their own styling.
+
+**Settings and app**
+- Theme (system/light/dark), dynamic color, and in-app language (system/English/Indonesian).
+- Force software decoding for chipsets with broken hardware decoding.
+- English and Indonesian localization.
+- About screen with the libVLC LGPL notice.
+
+See `docs/RELEASE.md` for the release build and the manual QA checklist.
 
 ## Tech stack
 
@@ -56,7 +73,7 @@ See [`docs/PRD.md`](docs/PRD.md) for the full scope and [`docs/ARCHITECTURE.md`]
 | Navigation | Navigation 3 |
 | DI | Hilt |
 | Player engine | libVLC for Android 3.7.x, behind a `PlayerController` contract |
-| Persistence | SharedPreferences today, Room 3 planned |
+| Persistence | SharedPreferences for settings and playback progress |
 | Build | AGP 9.4, Gradle 9.5, version catalog |
 | SDK | minSdk 26 · targetSdk 36 · compileSdk 37 |
 
@@ -119,11 +136,12 @@ Install on a device/emulator:
 ```
 app/src/main/java/app/subtle/player/
 ├── MainActivity.kt      single activity; hosts onboarding / main / player
+├── PlaybackService.kt  foreground service for background audio
 ├── RootViewModel.kt     start gate (onboarding vs main)
 ├── core/                common/ designsystem/ player/   (engine-agnostic contract)
 ├── engine/vlc/          libVLC implementation of PlayerController
-├── data/                storage/ repository/            (local/ + preferences/ planned)
-├── domain/              model/ repository/              (pure Kotlin; usecase/ planned)
+├── data/                storage/ repository/
+├── domain/              model/ repository/ usecase/     (pure Kotlin)
 ├── di/                  Hilt modules
 └── feature/             onboarding/ main/ home/ browse/ player/ settings/ about/ common/
 ```
@@ -131,20 +149,20 @@ app/src/main/java/app/subtle/player/
 ## Privacy
 
 Subtle is offline by design:
-- No `INTERNET` permission in v1.
+- No `INTERNET` permission.
 - No accounts, analytics, crash reporters, or ads.
 - File names and paths are never logged in release builds.
 - Your media never leaves the device.
 
 ## License and third-party
 
-The app is under development and its distribution license is not final.
-It bundles **libVLC for Android**, which is licensed under **LGPL-2.1**. libVLC is used
-dynamically linked as shipped; the app's About screen (Settings → About) carries
-the LGPL notice and a link to the libVLC source.
+Subtle bundles **libVLC for Android**, which is licensed under **LGPL-2.1**. libVLC is
+dynamically linked as shipped; the app's About screen (Settings → About) carries the LGPL
+notice and a link to the libVLC source.
 
 ## Documentation
 
-- [`docs/PRD.md`](docs/PRD.md) — what to build and what is out of scope.
+- [`docs/PRD.md`](docs/PRD.md) — scope and behaviour.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layers, packages, the `PlayerController` contract.
+- [`docs/RELEASE.md`](docs/RELEASE.md) — release build and manual QA checklist.
 - [`AGENTS.md`](AGENTS.md) — conventions for working in this repo.

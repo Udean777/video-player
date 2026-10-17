@@ -29,6 +29,7 @@ local.properties
 # Signing keys — never commit
 *.jks
 *.keystore
+keystore.properties
 
 # Build outputs
 *.apk
