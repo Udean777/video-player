@@ -19,8 +19,12 @@ fun HomeRoute(
         state = uiState,
         onViewModeChange = viewModel::setViewMode,
         onRefresh = viewModel::refresh,
+        onCancelScan = viewModel::cancelScan,
         onVideoClick = { onVideoClick(it.uri) },
         onOpenSettings = onOpenSettings,
+        onQueryChange = viewModel::setQuery,
+        onSortChange = viewModel::setSort,
+        onGroupSeriesChange = viewModel::setGroupSeries,
         modifier = modifier,
     )
 }

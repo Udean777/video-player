@@ -30,13 +30,14 @@ app/src/main/java/app/subtle/player/
 ├── SubtleApp.kt                       @HiltAndroidApp
 ├── MainActivity.kt                    single activity, enableEdgeToEdge(), hosts AppNavHost
 ├── RootViewModel.kt                   start gate: onboarding vs main tabs, based on storage access
+├── PlaybackService.kt                 foreground service: keeps playback alive, notification controls
 ├── navigation/
 │   ├── AppNavHost.kt                  NavDisplay + entry provider
 │   └── Keys.kt                        @Serializable NavKey types
 ├── core/
 │   ├── common/                        dispatcher qualifiers, AppError, small extensions
 │   ├── designsystem/                  SubtleTheme, typography, shared components
-│   └── player/                        PlayerController, PlayerState, Track, PlayerError, MediaSource
+│   └── player/                        PlayerController, PlayerState, Track, PlayerError, MediaSource, PlaybackHolder
 ├── engine/vlc/
 │   ├── VlcPlayerController.kt
 │   ├── VlcOptions.kt                  LibVLC option builder (incl. subtitle style)
@@ -57,7 +58,7 @@ app/src/main/java/app/subtle/player/
     ├── onboarding/                    OnboardingRoute, OnboardingScreen, OnboardingViewModel (first-run storage access)
     ├── main/                          MainRoute — bottom nav host (Home / Browse)
     ├── common/                        Browser shared UI: VideoRow/Cell, FolderRow/Cell, BrowserViewMode, formatSize
-    ├── home/                          HomeRoute, HomeScreen, HomeViewModel, HomeUiState (all videos, flat)
+    ├── home/                          HomeRoute, HomeScreen, HomeViewModel, HomeUiState (all videos / series groups)
     ├── browse/                        BrowseRoute, BrowseScreen, BrowseViewModel, BrowseUiState (folder tree)
     ├── player/                        PlayerRoute, PlayerScreen, PlayerViewModel, PlayerUiState,
     │                                  controls/, gestures/, subtitle/ (sheet)
@@ -84,6 +85,11 @@ interface PlayerController {
     fun seekTo(positionMs: Long)
     fun setSpeed(rate: Float)
 
+    /** Playback volume as a percentage, 0..100. */
+    fun setVolume(level: Int)
+
+    fun setAspectRatio(ratio: AspectRatio)
+
     fun selectAudioTrack(id: Int)
     /** Pass [Track.DISABLED_ID] to turn subtitles off. */
     fun selectSubtitleTrack(id: Int)
@@ -100,7 +106,13 @@ interface PlayerController {
     fun release()
 }
 
-data class PlayerConfig(val forceSoftwareDecoding: Boolean = false)
+data class PlayerConfig(
+    val forceSoftwareDecoding: Boolean = false,
+    val subtitleStyle: SubtitleStyle = SubtitleStyle(),
+)
+
+/** Fit = letterbox; Fill = stretch to the screen; Crop = zoom to fill, hiding the overflow. */
+enum class AspectRatio { Fit, Fill, Crop, Ratio16x9, Ratio4x3 }
 
 interface PlayerControllerFactory {
     fun create(config: PlayerConfig): PlayerController
@@ -113,6 +125,8 @@ data class PlayerState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val speed: Float = 1f,
+    val volume: Int = 100,
+    val aspectRatio: AspectRatio = AspectRatio.Fit,
     val isSeekable: Boolean = false,
     val audioTracks: List<Track> = emptyList(),
     val subtitleTracks: List<Track> = emptyList(),
@@ -146,7 +160,7 @@ Why this shape
 
 ## 4. Data and persistence
 
-Current implementation (Phase 2): no Room yet. Home and Browse read the shared storage live through `FileVideoScanner` (`java.io.File`), and `AndroidStorageAccess` gates on `MANAGE_EXTERNAL_STORAGE` (API 30+) / `READ_EXTERNAL_STORAGE` (API ≤ 29). The only persisted state is playback progress, kept in `SharedPreferences` (`PreferencesPlaybackProgressRepository`, keyed by URI, no DataStore dependency); the list/grid view mode lives in each ViewModel's `SavedStateHandle`. Both are intentionally disposable and will be replaced by the Room tables below at the scan/indexing phase.
+Current implementation (Phase 2): no Room yet. Home and Browse read the shared storage live through `FileVideoScanner` (`java.io.File`), and `AndroidStorageAccess` gates on `MANAGE_EXTERNAL_STORAGE` (API 30+) / `READ_EXTERNAL_STORAGE` (API ≤ 29). The only persisted state is playback progress, kept in `SharedPreferences` (`PreferencesPlaybackProgressRepository`, keyed by URI, encoded `positionMs,durationMs,lastPlayedMs`, no DataStore dependency); the list/grid view mode and Home sort live in each ViewModel's `SavedStateHandle`. Both are intentionally disposable and will be replaced by the Room tables below at the scan/indexing phase.
 
 Target schema (once scanning is indexed): Room 3 database `subtle.db`, schema export enabled, migrations tested.
 
@@ -158,7 +172,9 @@ Target schema (once scanning is indexed): Room 3 database `subtle.db`, schema ex
 | `PlaybackProgressEntity` | `videoId` (PK, FK), `positionMs`, `durationMs`, `updatedAt`, `watched` |
 | `VideoPreferenceEntity` | `videoId` (PK, FK), `subtitleDelayMs`, `audioDelayMs`, `selectedSubtitleKey?`, `selectedAudioKey?`, `hasHardSubs`, `charsetOverride?` |
 
-Settings (implemented): `SharedPreferences` behind `SettingsRepository` — theme (system/light/dark), dynamic color, force software decoding. Read at startup by `MainActivity` (theme) and by `PlayerViewModel` before creating the engine (`PlayerConfig.forceSoftwareDecoding`).
+Settings (implemented): `SharedPreferences` behind `SettingsRepository` — theme (system/light/dark), dynamic color, force software decoding, subtitle style (size, color, outline, background), default subtitle language. Read at startup by `MainActivity` (theme) and by `PlayerViewModel` before creating the engine (`PlayerConfig.forceSoftwareDecoding` / `PlayerConfig.subtitleStyle`) and when applying the subtitle-language preference.
+
+Subtitle styling (baseline): libVLC exposes no runtime style API, so `SubtitleStyle` is mapped to `freetype-*` module options in `VlcOptions.buildVlcArgs` and applied when the engine (`LibVLC`) is created. A style change therefore takes effect on the next playback session; only text subtitles are affected. The Settings screen shows a Compose preview approximating the result.
 
 Thumbnails: generated lazily with `MediaMetadataRetriever` on the IO dispatcher, cached to `cacheDir/thumbs/` and loaded by the image loader. They are disposable; never store them in the database.
 
@@ -170,7 +186,7 @@ Startup
 3. If a video is opened via `ACTION_VIEW`, the player takes precedence over the gate.
 
 Home
-`HomeViewModel` scans the whole storage through `StorageRepository.allVideos()` and lists every video (list or grid). Pull-to-refresh is the toolbar refresh button.
+`HomeViewModel` scans the whole storage through `StorageRepository.allVideos(onProgress)`, which walks the tree on the IO dispatcher and reports `ScanProgress` (folders scanned, videos found) as it goes; the scan is cancellable through its coroutine. The UI shows a progress banner with a Cancel action and a pull-to-refresh gesture. Every completed scan replaces the list, so removed files disappear. A search field filters by file name and a toolbar menu sorts by name, date added (`Video.lastModified`) or last played (`PlaybackProgress.lastPlayedMs`); the pure `filterAndSortVideos` use case does the work, and the chosen sort lives in `SavedStateHandle`. The same menu can toggle series grouping: the pure `SeriesGrouping` use case folds `S01E02`/`1x02`-style names into `SeriesGroup`s that the list renders as expandable headers. Rescan-on-start is a fresh non-blocking scan (no persistent index yet).
 
 Browse
 `BrowseViewModel` keeps a breadcrumb stack and calls `StorageRepository.listDirectory(path)` per directory (null = storage root). Only subfolders that contain videos (recursively) are listed, alongside the videos in the current directory. System `Android/` and hidden folders are skipped.
@@ -184,7 +200,7 @@ Play
 1. `PlayerRoute` creates `PlayerViewModel` around the opened URI. The ViewModel creates a `PlayerController` from the factory and resolves a same-folder playlist via `StorageRepository.listDirectory(parent)` so prev/next walk the siblings.
 2. On open the ViewModel reads the saved `PlaybackProgress` and calls `load(source, resumePositionMs)`. `resumePositionMs()` restarts from 0 when the record is under 5 s in, within 5 s of the end, or has no duration — so finished/opening credits do not resume.
 3. Position is auto-saved every 10 s while playing, and on pause and on leaving the player (`stop()`/`onCleared`). Reaching the end clears the record instead of storing 100%. The `PlayerScreen` "restart from beginning" action seeks to 0 and plays.
-4. The composable calls `attachSurface` on enter and `detachSurface` in `onDispose`. The ViewModel calls `release()` in `onCleared`.
+4. The composable binds video output to the lifecycle: it calls `attachSurface` on `ON_START` (and immediately if the effect appears while already foregrounded) and `detachSurface` on `ON_STOP`, so backgrounding detaches the video output while audio keeps playing and returning re-attaches a fresh surface. `onDispose` also detaches. The ViewModel calls `release()` in `onCleared`.
 5. Back navigation: player → close; Browse inside a folder → up one level; Browse at root → Home tab; Home → exit.
 
 Progress display
@@ -192,6 +208,12 @@ Home and Browse observe `PlaybackProgressRepository.progress` (a `Flow<Map<uri, 
 
 Subtitle sheet
 `PlayerState.subtitleTracks` (embedded) + `Video.subtitleFiles` (external, from DB) → merged list in `PlayerViewModel` → sheet. Choosing an external file calls `addExternalSubtitle`, then records the choice in `VideoPreference`.
+
+Default subtitle language
+`AppSettings.subtitleLanguage` (`None`/`English`/`Indonesian`). On open, `PlayerViewModel` first tries an external file whose `languageHint` matches (`SubtitleLanguageMatcher`, token-based), then, once external discovery has finished and no external matched, an embedded track whose name matches. `None` leaves the choice to the engine, and the hard-subtitle policy wins over both.
+
+Background audio
+`PlayerViewModel` (the owner of the engine) mirrors the title, play/pause state, and prev/next availability into the process-wide `PlaybackHolder`, which starts and stops a foreground `PlaybackService`. The service keeps the process alive while the app is backgrounded and shows a notification with play/pause and, when available, previous/next controls; its actions call back into the ViewModel through the holder. Leaving the player (`stop()`) detaches the holder and stops the service. Auto-play-next and series grouping both live in the player/Home ViewModels. On API 33+ the app requests `POST_NOTIFICATIONS`; the service runs regardless but its controls are only visible once granted.
 
 ## 6. Threading
 
@@ -320,13 +342,14 @@ Gradle wrapper: 9.5.0 or newer (AGP 9.3 minimum). Enable the configuration cache
 - Unit tests needing `android.net.Uri` run under Robolectric; the test JVM carries the
   `--add-opens`/`--enable-native-access` flags JDK 21 requires (see `app/build.gradle.kts`).
 
-Release hardening: R8 on, keep rules for libVLC (`org.videolan.libvlc.**`, JNI-accessed classes) in `proguard-rules.pro`; verify with a release build on a device, since missing keep rules fail only at runtime. Ship an AAB so ABI splits are automatic; for sideloaded APKs, use `splits { abi { ... } }` with arm64-v8a first.
+Release hardening (implemented in `app/build.gradle.kts`): R8 minify + resource shrinking on for `release`, keep rules for libVLC (`org.videolan.libvlc.**`, JNI-accessed classes) in `proguard-rules.pro`; verify with a release build on a device, since missing keep rules fail only at runtime. Per-ABI APKs via `splits { abi { ... } }` (arm64-v8a, armeabi-v7a, x86_64; each < 70 MB) and an AAB via `:app:bundleRelease`. Signing is opt-in through a git-ignored `keystore.properties`; without it the build produces unsigned APKs. Manual QA steps live in `docs/RELEASE.md`.
 
 ## 10. Manifest notes
 
 - Storage: `MANAGE_EXTERNAL_STORAGE` (All files access, API 30+) and `READ_EXTERNAL_STORAGE` with `maxSdkVersion="29"`; `android:requestLegacyExternalStorage="true"` for API 29. No `INTERNET` permission in v1.
 - `MainActivity`: `android:supportsPictureInPicture="true"`, `android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"` so rotation and PiP resizing do not recreate the player.
 - Intent filter for `ACTION_VIEW` with `video/*` (and `content` scheme) to support "Open with".
+- Background audio: `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK` and a non-exported `PlaybackService` with `foregroundServiceType="mediaPlayback"`; `POST_NOTIFICATIONS` is requested at startup on API 33+.
 - `android:allowBackup` with explicit `dataExtractionRules`/`fullBackupContent` that exclude cache and thumbnails.
 
 ## 11. Evolution path

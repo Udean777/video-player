@@ -2,11 +2,12 @@ package app.subtle.player.domain.model
 
 /**
  * Saved playback position for a video. [positionMs] is where playback stopped,
- * [durationMs] the total length (0 when unknown).
+ * [durationMs] the total length (0 when unknown), [lastPlayedMs] when it was last saved.
  */
 data class PlaybackProgress(
     val positionMs: Long,
     val durationMs: Long,
+    val lastPlayedMs: Long = 0L,
 ) {
     val fraction: Float
         get() = if (durationMs <= 0L) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)

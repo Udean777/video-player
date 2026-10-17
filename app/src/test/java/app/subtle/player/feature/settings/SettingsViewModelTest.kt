@@ -1,5 +1,8 @@
 package app.subtle.player.feature.settings
 
+import app.subtle.player.domain.model.AppLanguage
+import app.subtle.player.domain.model.SubtitleLanguage
+import app.subtle.player.domain.model.SubtitleSize
 import app.subtle.player.domain.model.ThemeMode
 import app.subtle.player.feature.common.FakeSettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -51,5 +54,41 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         assertTrue(repository.current.forceSoftwareDecoding)
+    }
+
+    @Test
+    fun setSubtitleSizeUpdatesStyleOnly() = runTest {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+
+        viewModel.setSubtitleSize(SubtitleSize.Huge)
+        advanceUntilIdle()
+
+        assertEquals(SubtitleSize.Huge, repository.current.subtitleStyle.size)
+        assertEquals(ThemeMode.System, repository.current.theme)
+    }
+
+    @Test
+    fun setSubtitleLanguageUpdatesSetting() = runTest {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+
+        viewModel.setSubtitleLanguage(SubtitleLanguage.English)
+        advanceUntilIdle()
+
+        assertEquals(SubtitleLanguage.English, repository.current.subtitleLanguage)
+    }
+
+    @Test
+    fun setAutoPlayNextAndLanguageUpdateSettings() = runTest {
+        val repository = FakeSettingsRepository()
+        val viewModel = SettingsViewModel(repository)
+
+        viewModel.setAutoPlayNext(false)
+        viewModel.setLanguage(AppLanguage.Indonesian)
+        advanceUntilIdle()
+
+        assertTrue(!repository.current.autoPlayNext)
+        assertEquals(AppLanguage.Indonesian, repository.current.language)
     }
 }

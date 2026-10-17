@@ -1,5 +1,6 @@
 package app.subtle.player.feature.player.playback
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.subtle.player.R
+import app.subtle.player.core.player.AspectRatio
 import app.subtle.player.core.player.PlayerState
 
 private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)
@@ -39,6 +41,7 @@ fun PlaybackSheet(
     onAudioDelayDelta: (Long) -> Unit,
     onResetAudioDelay: () -> Unit,
     onSpeedChange: (Float) -> Unit,
+    onAspectRatioChange: (AspectRatio) -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -87,8 +90,35 @@ fun PlaybackSheet(
                     )
                 }
             }
+
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.aspect_ratio), style = MaterialTheme.typography.titleSmall)
+            AspectRatio.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAspectRatioChange(option) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = player.aspectRatio == option,
+                        onClick = { onAspectRatioChange(option) },
+                    )
+                    Text(stringResource(option.labelRes()))
+                }
+            }
         }
     }
+}
+
+@StringRes
+private fun AspectRatio.labelRes(): Int = when (this) {
+    AspectRatio.Fit -> R.string.aspect_fit
+    AspectRatio.Fill -> R.string.aspect_fill
+    AspectRatio.Crop -> R.string.aspect_crop
+    AspectRatio.Ratio16x9 -> R.string.aspect_16_9
+    AspectRatio.Ratio4x3 -> R.string.aspect_4_3
 }
 
 @Composable

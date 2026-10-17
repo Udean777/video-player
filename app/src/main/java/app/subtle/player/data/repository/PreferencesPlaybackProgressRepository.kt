@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 /**
- * ponytail: SharedPreferences keyed by URI ("positionMs,durationMs"). No Room/DataStore wiring
- * needed; swap for a database if the library ever grows large enough to make getAll() slow.
+ * ponytail: SharedPreferences keyed by URI ("positionMs,durationMs,lastPlayedMs"). No Room/DataStore
+ * wiring needed; swap for a database if the library ever grows large enough to make getAll() slow.
  */
 @Singleton
 class PreferencesPlaybackProgressRepository @Inject constructor(
@@ -29,8 +29,9 @@ class PreferencesPlaybackProgressRepository @Inject constructor(
     override suspend fun get(uri: String): PlaybackProgress? = _progress.value[uri]
 
     override suspend fun save(uri: String, positionMs: Long, durationMs: Long) {
-        prefs.edit { putString(uri, "$positionMs,$durationMs") }
-        _progress.update { it + (uri to PlaybackProgress(positionMs, durationMs)) }
+        val entry = PlaybackProgress(positionMs, durationMs, System.currentTimeMillis())
+        prefs.edit { putString(uri, "${entry.positionMs},${entry.durationMs},${entry.lastPlayedMs}") }
+        _progress.update { it + (uri to entry) }
     }
 
     override suspend fun clear(uri: String) {
@@ -43,10 +44,11 @@ class PreferencesPlaybackProgressRepository @Inject constructor(
 
     private fun decode(value: String?): PlaybackProgress? {
         val parts = value?.split(',') ?: return null
-        if (parts.size != 2) return null
+        if (parts.size < 2) return null
         val position = parts[0].toLongOrNull() ?: return null
         val duration = parts[1].toLongOrNull() ?: return null
-        return PlaybackProgress(position, duration)
+        val lastPlayed = parts.getOrNull(2)?.toLongOrNull() ?: 0L
+        return PlaybackProgress(position, duration, lastPlayed)
     }
 
     private companion object {

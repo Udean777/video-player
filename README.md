@@ -33,6 +33,7 @@ See [`docs/PRD.md`](docs/PRD.md) for the full scope and [`docs/ARCHITECTURE.md`]
 **Working now**
 - One-time storage access, then browse every video on the device.
 - Home lists all videos; Browse walks the folder tree VLC-style.
+- Search by name and sort by name, date added, or last played.
 - List and grid views, thumbnails generated on the fly.
 - Fullscreen player with auto-hiding controls, immersive system bars, and orientation lock.
 - Seek bar, skip controls for ±10 s, previous/next video within the folder.
@@ -40,12 +41,20 @@ See [`docs/PRD.md`](docs/PRD.md) for the full scope and [`docs/ARCHITECTURE.md`]
 - Finished videos clear their position instead of lingering at 100%.
 - Embedded and external subtitle tracks, delay adjustment, charset detection, hard-sub mode.
 - Audio track selection, audio delay, playback speed (0.5×–4×), picture-in-picture.
-- Settings: theme (system/light/dark), dynamic color, force software decoding.
+- Aspect-ratio modes (fit, fill, crop, 16:9, 4:3) and tap/drag gestures (seek, brightness, volume, lock).
+- Settings: theme (system/light/dark), dynamic color, force software decoding, subtitle style (size, color, outline, background) with a live preview.
+- Default subtitle language (auto-selects a matching embedded or external track on start).
 - English and Indonesian localization; About screen with the libVLC LGPL notice.
+- Background audio with a foreground playback service and play/pause, prev/next notification controls.
+- Auto-play next episode and optional series grouping (`S01E02`/`1x02`) with expandable headers.
+- In-app language switch (system/English/Indonesian), default subtitle language, ASS style override.
 
 **Roadmap**
-- Subtitle styling (size, color, outline, position).
-- Gesture layer (brightness, volume, seek).
+- Watch-together sync (transport in `data`, orchestration in `domain`).
+
+See `docs/RELEASE.md` for the release build and the manual QA checklist.
+
+**Not planned** (libVLC 3.7 has no runtime API, or out of v1 scope): subtitle bottom offset and live styling, hard-sub avoidance by repositioning, online subtitle search (v1 is offline), multiple library folders.
 
 ## Tech stack
 

@@ -3,18 +3,26 @@ package app.subtle.player.feature.player
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.SavedStateHandle
+import app.subtle.player.core.player.AspectRatio
 import app.subtle.player.core.player.MediaSource
 import app.subtle.player.core.player.PlayerConfig
 import app.subtle.player.core.player.PlayerController
 import app.subtle.player.core.player.PlayerControllerFactory
 import app.subtle.player.core.player.PlayerError
 import app.subtle.player.core.player.PlayerState
+import app.subtle.player.core.player.PlaybackHolder
 import app.subtle.player.core.player.SubtitleSource
 import app.subtle.player.core.player.Track
 import app.subtle.player.domain.model.AppSettings
 import app.subtle.player.domain.model.DirectoryContent
 import app.subtle.player.domain.model.PlaybackProgress
+import app.subtle.player.domain.model.ScanProgress
+import app.subtle.player.domain.model.SubtitleBackground
+import app.subtle.player.domain.model.SubtitleColor
 import app.subtle.player.domain.model.SubtitleFile
+import app.subtle.player.domain.model.SubtitleLanguage
+import app.subtle.player.domain.model.SubtitleSize
+import app.subtle.player.domain.model.SubtitleStyle
 import app.subtle.player.domain.model.Video
 import app.subtle.player.domain.model.VideoPreferences
 import app.subtle.player.domain.repository.StorageRepository
@@ -36,11 +44,13 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -55,11 +65,13 @@ class PlayerViewModelTest {
     private lateinit var subtitles: FakeSubtitleRepository
     private lateinit var preferences: FakeVideoPreferencesRepository
     private lateinit var settings: FakeSettingsRepository
+    private lateinit var playbackHolder: PlaybackHolder
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeController = FakePlayerController()
+        playbackHolder = PlaybackHolder(RuntimeEnvironment.getApplication())
         storage = FakeStorageRepository()
         progress = FakePlaybackProgressRepository()
         subtitles = FakeSubtitleRepository()
@@ -133,6 +145,7 @@ class PlayerViewModelTest {
             subtitles,
             preferences,
             settings,
+            playbackHolder,
             SavedStateHandle(),
             testDispatcher,
         )
@@ -289,6 +302,30 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun setVolumeDelegatesToController() = runTest {
+        val viewModel = viewModel()
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+
+        viewModel.setVolume(40)
+        advanceUntilIdle()
+
+        assertEquals(40, fakeController.lastVolume)
+    }
+
+    @Test
+    fun setAspectRatioDelegatesToController() = runTest {
+        val viewModel = viewModel()
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+
+        viewModel.setAspectRatio(AspectRatio.Ratio16x9)
+        advanceUntilIdle()
+
+        assertEquals(AspectRatio.Ratio16x9, fakeController.lastAspectRatio)
+    }
+
+    @Test
     fun adjustSubtitleDelayAppliesAndPersists() = runTest {
         val uri = "content://media/video/1".toUri()
         val viewModel = viewModel()
@@ -330,6 +367,77 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun defaultSubtitleLanguageSelectsMatchingTrack() = runTest {
+        settings = FakeSettingsRepository(AppSettings(subtitleLanguage = SubtitleLanguage.English))
+        val viewModel = viewModel()
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+
+        fakeController.emit(
+            PlayerState(
+                status = PlayerState.Status.Playing,
+                subtitleTracks = listOf(Track(3, "Track 1 - [English]"), Track(4, "[Indonesian]")),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(3, fakeController.selectedSubtitleId)
+    }
+
+    @Test
+    fun defaultSubtitleLanguageLoadsMatchingExternalFile() = runTest {
+        settings = FakeSettingsRepository(AppSettings(subtitleLanguage = SubtitleLanguage.English))
+        storage.subtitleFiles = listOf(SubtitleFile("file:///x.en.srt", "movie.en.srt", "en"))
+        subtitles.prepared = "file:///cache/subs/prepared.srt"
+        val viewModel = viewModel()
+        viewModel.open("file:///movies/movie.mkv".toUri())
+        advanceUntilIdle()
+
+        assertEquals("file:///cache/subs/prepared.srt", fakeController.addedSubtitleUri)
+    }
+
+    @Test
+    fun autoPlaysNextOnEnd() = runTest {
+        storage.directoryContent = DirectoryContent(
+            displayName = "",
+            folders = emptyList(),
+            videos = listOf(
+                video("file:///m/a.mkv", "a.mkv"),
+                video("file:///m/b.mkv", "b.mkv"),
+            ),
+        )
+        val viewModel = viewModel()
+        viewModel.open("file:///m/a.mkv".toUri())
+        advanceUntilIdle()
+
+        fakeController.emit(PlayerState(status = PlayerState.Status.Ended, durationMs = 1_000L))
+        advanceUntilIdle()
+
+        assertEquals("file:///m/b.mkv", (fakeController.loadedSource as MediaSource.Content).uri.toString())
+    }
+
+    @Test
+    fun doesNotAutoPlayNextWhenDisabled() = runTest {
+        settings = FakeSettingsRepository(AppSettings(autoPlayNext = false))
+        storage.directoryContent = DirectoryContent(
+            displayName = "",
+            folders = emptyList(),
+            videos = listOf(
+                video("file:///m/a.mkv", "a.mkv"),
+                video("file:///m/b.mkv", "b.mkv"),
+            ),
+        )
+        val viewModel = viewModel()
+        viewModel.open("file:///m/a.mkv".toUri())
+        advanceUntilIdle()
+
+        fakeController.emit(PlayerState(status = PlayerState.Status.Ended, durationMs = 1_000L))
+        advanceUntilIdle()
+
+        assertEquals("file:///m/a.mkv", (fakeController.loadedSource as MediaSource.Content).uri.toString())
+    }
+
+    @Test
     fun contentUriHasNoSiblings() = runTest {        val viewModel = viewModel()
         viewModel.open("content://media/video/1".toUri())
         advanceUntilIdle()
@@ -341,7 +449,31 @@ class PlayerViewModelTest {
     @Test
     fun softwareDecodingAddsLibVlcFlag() {
         assertTrue(buildVlcArgs(PlayerConfig(forceSoftwareDecoding = true)).contains("--avcodec-hw=none"))
-        assertTrue(buildVlcArgs(PlayerConfig()).isEmpty())
+        assertTrue(!buildVlcArgs(PlayerConfig()).contains("--avcodec-hw=none"))
+    }
+
+    @Test
+    fun subtitleStyleMapsToFreetypeArgs() {
+        val args = buildVlcArgs(
+            PlayerConfig(
+                subtitleStyle = SubtitleStyle(
+                    size = SubtitleSize.Huge,
+                    color = SubtitleColor.Yellow,
+                    outline = false,
+                    background = SubtitleBackground.Solid,
+                ),
+            ),
+        )
+        assertTrue(args.contains("--freetype-rel-fontsize=8"))
+        assertTrue(args.contains("--freetype-color=${SubtitleColor.Yellow.rgb}"))
+        assertTrue(args.contains("--freetype-outline-thickness=0"))
+        assertTrue(args.contains("--freetype-background-opacity=255"))
+        assertTrue(!buildVlcArgs(PlayerConfig()).contains("--freetype-background-opacity=0"))
+        assertTrue(!args.contains("--sub-ass-override=force"))
+        assertTrue(
+            buildVlcArgs(PlayerConfig(subtitleStyle = SubtitleStyle(assUseMyStyle = true)))
+                .contains("--sub-ass-override=force"),
+        )
     }
 
     @Test
@@ -355,6 +487,7 @@ class PlayerViewModelTest {
             subtitles,
             preferences,
             settings,
+            playbackHolder,
             SavedStateHandle(),
             testDispatcher,
         )
@@ -362,6 +495,21 @@ class PlayerViewModelTest {
         advanceUntilIdle()
 
         assertEquals(true, captured?.forceSoftwareDecoding)
+    }
+
+    @Test
+    fun backgroundHolderTracksPlaybackAndClearsOnStop() = runTest {
+        val viewModel = viewModel()
+        viewModel.open("content://media/video/1".toUri())
+        advanceUntilIdle()
+        fakeController.emit(PlayerState(status = PlayerState.Status.Playing, positionMs = 1_000L, durationMs = 600_000L))
+        advanceUntilIdle()
+
+        assertTrue(playbackHolder.nowPlaying.value.isPlaying)
+        assertEquals("1", playbackHolder.nowPlaying.value.title)
+
+        viewModel.stop()
+        assertNull(playbackHolder.controller)
     }
 
     private fun viewModel(savedStateHandle: SavedStateHandle = SavedStateHandle()): PlayerViewModel {
@@ -373,6 +521,7 @@ class PlayerViewModelTest {
             subtitles,
             preferences,
             settings,
+            playbackHolder,
             savedStateHandle,
             testDispatcher,
         )
@@ -384,7 +533,7 @@ private fun video(uri: String, name: String) = Video(uri = uri, displayName = na
 private class FakeStorageRepository : StorageRepository {
     var directoryContent = DirectoryContent(displayName = "", folders = emptyList(), videos = emptyList())
     var subtitleFiles: List<SubtitleFile> = emptyList()
-    override suspend fun allVideos(): List<Video> = directoryContent.videos
+    override suspend fun allVideos(onProgress: (ScanProgress) -> Unit): List<Video> = directoryContent.videos
     override suspend fun listDirectory(path: String?): DirectoryContent = directoryContent
     override suspend fun subtitlesFor(videoUri: String): List<SubtitleFile> = subtitleFiles
 }
@@ -412,6 +561,8 @@ private class FakePlayerController : PlayerController {
     var playCalls = 0
     var pauseCalls = 0
     var lastSeekMs: Long? = null
+    var lastVolume: Int? = null
+    var lastAspectRatio: AspectRatio? = null
     var selectedSubtitleId: Int? = null
     var selectedAudioId: Int? = null
     var lastSubtitleDelayMs: Long? = null
@@ -443,6 +594,15 @@ private class FakePlayerController : PlayerController {
     }
 
     override fun setSpeed(rate: Float) = Unit
+
+    override fun setVolume(level: Int) {
+        lastVolume = level
+    }
+
+    override fun setAspectRatio(ratio: AspectRatio) {
+        lastAspectRatio = ratio
+    }
+
     override fun selectAudioTrack(id: Int) {
         selectedAudioId = id
     }

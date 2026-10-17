@@ -1,17 +1,27 @@
 package app.subtle.player
 
+import android.Manifest
+import android.app.LocaleManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.LocaleList
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -29,6 +39,14 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    /** Set by the player screen so leaving the app (home/recents) collapses into PiP. */
+    var leaveToPip: (() -> Unit)? = null
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        leaveToPip?.invoke()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -45,6 +63,32 @@ class MainActivity : ComponentActivity() {
             }
 
             SubtleTheme(darkTheme = darkTheme, dynamicColor = appSettings.dynamicColor) {
+                val context = LocalContext.current
+                val notificationPermission = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { }
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+                val languageTag = appSettings.language.tag
+                LaunchedEffect(languageTag) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val manager = context.getSystemService(LocaleManager::class.java)
+                        val desired = if (languageTag == null) {
+                            LocaleList.getEmptyLocaleList()
+                        } else {
+                            LocaleList.forLanguageTags(languageTag)
+                        }
+                        if (manager.applicationLocales != desired) {
+                            manager.applicationLocales = desired
+                        }
+                    }
+                }
                 val rootViewModel: RootViewModel = viewModel()
                 val start by rootViewModel.start.collectAsStateWithLifecycle()
                 LifecycleResumeEffect(Unit) {

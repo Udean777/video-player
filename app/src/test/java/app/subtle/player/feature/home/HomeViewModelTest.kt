@@ -2,9 +2,12 @@ package app.subtle.player.feature.home
 
 import androidx.lifecycle.SavedStateHandle
 import app.subtle.player.domain.model.DirectoryContent
+import app.subtle.player.domain.model.PlaybackProgress
+import app.subtle.player.domain.model.ScanProgress
 import app.subtle.player.domain.model.SubtitleFile
 import app.subtle.player.domain.model.Video
 import app.subtle.player.domain.repository.StorageRepository
+import app.subtle.player.domain.usecase.VideoSort
 import app.subtle.player.feature.common.BrowserViewMode
 import app.subtle.player.feature.common.FakePlaybackProgressRepository
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +19,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -66,6 +71,52 @@ class HomeViewModelTest {
 
         assertEquals(BrowserViewMode.Grid, viewModel.uiState.value.viewMode)
     }
+
+    @Test
+    fun queryFiltersByName() = runTest {
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        advanceUntilIdle()
+
+        viewModel.setQuery("a.")
+        advanceUntilIdle()
+
+        assertEquals(listOf("a.mp4"), viewModel.uiState.value.videos.map { it.displayName })
+    }
+
+    @Test
+    fun scanReportsProgressAndFinishes() = runTest {
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.videosFound)
+        assertFalse(viewModel.uiState.value.isScanning)
+    }
+
+    @Test
+    fun groupSeriesBuildsGroups() = runTest {
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        advanceUntilIdle()
+
+        viewModel.setGroupSeries(true)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.groupSeries)
+        assertEquals(2, viewModel.uiState.value.groups.size)
+    }
+
+    @Test
+    fun sortByLastPlayedPutsRecentlyPlayedFirst() = runTest {
+        val progress = FakePlaybackProgressRepository()
+        val viewModel = HomeViewModel(FakeStorageRepository(), progress, SavedStateHandle())
+        advanceUntilIdle()
+
+        viewModel.setSort(VideoSort.LastPlayed)
+        progress.set("file:///sdcard/b.mkv", PlaybackProgress(1_000L, 2_000L, lastPlayedMs = 500L))
+        advanceUntilIdle()
+
+        assertEquals(listOf("b.mkv", "a.mp4"), viewModel.uiState.value.videos.map { it.displayName })
+    }
 }
 
 private class FakeStorageRepository : StorageRepository {
@@ -74,7 +125,10 @@ private class FakeStorageRepository : StorageRepository {
         Video("file:///sdcard/b.mkv", "b.mkv", 200L, 0L),
     )
 
-    override suspend fun allVideos(): List<Video> = videos
+    override suspend fun allVideos(onProgress: (ScanProgress) -> Unit): List<Video> {
+        onProgress(ScanProgress(foldersScanned = 1, videosFound = videos.size))
+        return videos
+    }
 
     override suspend fun subtitlesFor(videoUri: String): List<SubtitleFile> = emptyList()
 

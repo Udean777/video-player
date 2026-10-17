@@ -23,4 +23,9 @@ class FakePlaybackProgressRepository : PlaybackProgressRepository {
         saved.remove(uri)
         _progress.value = saved.toMap()
     }
+
+    fun set(uri: String, progress: PlaybackProgress) {
+        saved[uri] = progress
+        _progress.value = saved.toMap()
+    }
 }

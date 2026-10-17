@@ -6,12 +6,15 @@ import androidx.core.net.toUri
 import app.subtle.player.core.common.IoDispatcher
 import app.subtle.player.domain.model.DirectoryContent
 import app.subtle.player.domain.model.FolderEntry
+import app.subtle.player.domain.model.ScanProgress
 import app.subtle.player.domain.model.SubtitleFile
 import app.subtle.player.domain.model.Video
 import app.subtle.player.domain.model.isSubtitleFile
 import app.subtle.player.domain.model.isVideoFile
 import app.subtle.player.domain.usecase.SubtitleMatcher
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
@@ -22,9 +25,14 @@ class FileVideoScanner @Inject constructor(
     @IoDispatcher private val io: CoroutineDispatcher,
 ) {
 
-    suspend fun allVideos(): List<Video> = withContext(io) {
+    suspend fun allVideos(onProgress: (ScanProgress) -> Unit = {}): List<Video> = withContext(io) {
         val found = mutableListOf<Video>()
-        collectVideos(root(), found)
+        var folders = 0
+        onProgress(ScanProgress(folders, found.size))
+        collectVideos(root(), found, onFolder = {
+            folders++
+            onProgress(ScanProgress(folders, found.size))
+        })
         found.sortedBy { it.displayName.lowercase() }
     }
 
@@ -80,10 +88,12 @@ class FileVideoScanner @Inject constructor(
 
     // ponytail: recursive scan on every directory open. Fine for typical libraries;
     // move to a background index (Room) if a deep tree ever feels slow.
-    private fun collectVideos(dir: File, out: MutableList<Video>) {
+    private suspend fun collectVideos(dir: File, out: MutableList<Video>, onFolder: () -> Unit) {
+        currentCoroutineContext().ensureActive()
+        onFolder()
         dir.listFiles()?.forEach { child ->
             when {
-                child.isBrowsable() -> collectVideos(child, out)
+                child.isBrowsable() -> collectVideos(child, out, onFolder)
                 child.isFile && !child.isHidden && isVideoFile(null, child.name) -> out.add(child.toVideo())
             }
         }

@@ -51,7 +51,6 @@ Priority: P0 = required for v1, P1 = v1.1, P2 = later.
 | L1 | First launch asks for full-storage access ("All files access" on API 30+, `READ_EXTERNAL_STORAGE` below); no folder picker | P0 |
 | L2 | Recursive scan runs in the background, shows progress, can be cancelled, never blocks the UI | P0 |
 | L3 | Library lists videos with thumbnail, title (from file name), duration, and watched progress | P0 |
-| L4 | Multiple library folders can be added or removed in Settings | P1 |
 | L5 | Re-scan on app start (incremental) and on pull-to-refresh; removed files disappear | P0 |
 | L6 | Search by title; sort by name, date added, last played | P1 |
 | L7 | "Open with" from a file manager plays a single file without adding it to the library | P0 |
@@ -82,11 +81,9 @@ Priority: P0 = required for v1, P1 = v1.1, P2 = later.
 | S4 | Load a subtitle manually via the system file picker; remember it for that video | P0 |
 | S5 | Subtitle delay adjustment with ±100 ms steps and a fine ±10 ms mode; reset button; value remembered per video | P0 |
 | S6 | Charset handling: detect non-UTF-8 text subtitles automatically; let the user override the charset when text looks broken | P0 |
-| S7 | Style: text size, color, outline/shadow, background opacity, bottom offset. ASS files: toggle between "use file styling" and "use my style" | P1 |
+| S7 | Style (text subtitles): text size, color, outline/shadow, background opacity. Applied when a video is opened | P1 |
 | S8 | Hard-subtitle mode: user marks a video as "has burned-in subtitles"; soft subtitles are hidden for it (default behavior), remembered per video | P0 |
-| S9 | Hard-subtitle mode alternative: keep soft subtitles visible but moved to avoid overlap, if the engine supports runtime repositioning | P2 |
 | S10 | Default subtitle language preference; auto-select matching track on playback start | P1 |
-| S11 | Online subtitle search | P2 |
 
 ### 5.4 Settings and misc
 
@@ -118,7 +115,7 @@ Subtitles in player: tap subtitle button → bottom sheet with: track list (embe
 1. Onboarding (storage access)
 2. Home (all videos, grid or list) + Browse (folder tree) behind a bottom nav
 3. Player (video, controls, gesture layer, subtitle and audio sheets)
-4. Settings (folders, playback, subtitles default style, theme, language)
+4. Settings (playback, subtitles default style, theme, language)
 5. About / licenses
 
 ## 9. Success metrics (local, observable by the developer only)
@@ -137,7 +134,7 @@ Subtitles in player: tap subtitle button → bottom sheet with: track list (embe
 | 4 | Subtitles: embedded tracks, external files, delay, charset, hardsub mode |
 | 5 | Gestures, audio tracks, styling, settings, localization |
 | 6 | Polish, accessibility pass, test corpus, release build |
-| Later | Online subtitles, background audio, watch-together sync |
+| Later | Watch-together sync |
 
 ## 11. Risks
 
@@ -154,4 +151,16 @@ Subtitles in player: tap subtitle button → bottom sheet with: track list (embe
 
 - Final app name and package id (currently `app.subtle.player`, placeholder)
 - Distribute on Google Play, F-Droid, or both (affects licensing and tracking-free claims)
-- Is background audio worth moving up to v1?
+- Is background audio worth moving up to v1? — Yes, implemented: a foreground playback service with play/pause and next/previous notification controls.
+
+## 13. Removed (not feasible on libVLC 3.7 / out of scope)
+
+Dropped from the requirements above; kept here so the reasoning is not lost.
+
+| Was | Why removed |
+|---|---|
+| Subtitle bottom offset / vertical position (part of S7) | libVLC 3.7 exposes no runtime or option-based control for subtitle vertical position |
+| Live subtitle styling without reopening the video (part of S7) | Style is a freetype module option set at engine creation; changing it needs a new `LibVLC` instance, so it applies from the next playback instead |
+| Hard-sub avoidance by repositioning soft subtitles (S9) | Same as position: requires runtime repositioning the engine does not provide |
+| Online subtitle search (S11) | v1 is offline with no network permission (see Non-goals) |
+| Multiple library folders add/remove (L4) | Superseded by the all-files scan model; the library is every video reachable through storage access |

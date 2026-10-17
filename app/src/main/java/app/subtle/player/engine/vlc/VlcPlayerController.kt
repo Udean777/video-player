@@ -2,6 +2,7 @@ package app.subtle.player.engine.vlc
 
 import android.view.ViewGroup
 import app.subtle.player.core.common.PlayerDispatcher
+import app.subtle.player.core.player.AspectRatio
 import app.subtle.player.core.player.MediaSource
 import app.subtle.player.core.player.PlayerConfig
 import app.subtle.player.core.player.PlayerController
@@ -49,6 +50,10 @@ internal class VlcPlayerController(
     private var pendingStartMs: Long = 0L
     private var released: Boolean = false
     private var videoLayout: VLCVideoLayout? = null
+    private var currentAspectRatio = AspectRatio.Fit
+
+    @Volatile private var displayWidth = 0
+    @Volatile private var displayHeight = 0
 
     private val listener =
         MediaPlayer.EventListener { event ->
@@ -142,6 +147,43 @@ internal class VlcPlayerController(
         }
     }
 
+    override fun setVolume(level: Int) {
+        val clamped = level.coerceIn(0, 100)
+        scope.launch {
+            runCatching {
+                player.volume = clamped
+                _state.update { it.copy(volume = clamped) }
+            }
+        }
+    }
+
+    override fun setAspectRatio(ratio: AspectRatio) {
+        currentAspectRatio = ratio
+        scope.launch {
+            runCatching { applyAspectRatio() }
+            _state.update { it.copy(aspectRatio = ratio) }
+        }
+    }
+
+    /** Fill and crop depend on the view size, so they are (re)applied once the surface is laid out. */
+    private fun applyAspectRatio() {
+        val track = runCatching { player.currentVideoTrack }.getOrNull()
+        val swapped = track?.orientation == IMedia.VideoTrack.Orientation.LeftBottom ||
+            track?.orientation == IMedia.VideoTrack.Orientation.RightTop
+        val params = aspectRatioParams(
+            ratio = currentAspectRatio,
+            displayWidth = displayWidth,
+            displayHeight = displayHeight,
+            videoWidth = track?.width ?: 0,
+            videoHeight = track?.height ?: 0,
+            orientationSwapped = swapped,
+            sarNum = track?.sarNum ?: 1,
+            sarDen = track?.sarDen ?: 1,
+        )
+        player.setScale(params.scale)
+        player.setAspectRatio(params.aspectRatio)
+    }
+
     override fun selectAudioTrack(id: Int) {
         scope.launch {
             runCatching {
@@ -192,6 +234,13 @@ internal class VlcPlayerController(
     }
 
     override fun attachSurface(container: ViewGroup) {
+        // Lifecycle-driven attach can arrive twice (observer replay + immediate attach), and libVLC
+        // throws if a surface is set on an attached AWindow. Keep it idempotent.
+        val existing = videoLayout
+        if (existing != null) {
+            if (existing.parent === container) return
+            detachSurface()
+        }
         val videoLayout = VLCVideoLayout(container.context)
         this.videoLayout = videoLayout
         container.addView(
@@ -201,6 +250,13 @@ internal class VlcPlayerController(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        videoLayout.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+            displayWidth = right - left
+            displayHeight = bottom - top
+            if (currentAspectRatio == AspectRatio.Fill || currentAspectRatio == AspectRatio.Crop) {
+                scope.launch { runCatching { applyAspectRatio() } }
+            }
+        }
         // The layout (not a bare SurfaceView) lets libVLC size and centre the video itself.
         // Subtitles on the layout: text styling and image subs (PGS/VobSub) only render with this true.
         player.attachViews(videoLayout, null, true, false)
@@ -235,6 +291,7 @@ internal class VlcPlayerController(
         val selectedSpu = runCatching { player.spuTrack }.getOrDefault(Track.DISABLED_ID)
         val seekable = runCatching { player.isSeekable }.getOrDefault(false)
         val length = runCatching { player.length }.getOrDefault(-1L).coerceAtLeast(0L)
+        val volume = runCatching { player.volume }.getOrDefault(100)
         _state.update {
             it.copy(
                 audioTracks = audio,
@@ -243,6 +300,7 @@ internal class VlcPlayerController(
                 selectedSubtitleTrackId = selectedSpu.takeIf { id -> id >= 0 },
                 isSeekable = seekable,
                 durationMs = if (length > 0L) length else it.durationMs,
+                volume = volume.coerceIn(0, 100),
             )
         }
         maybeApplyPendingPosition(seekable)
