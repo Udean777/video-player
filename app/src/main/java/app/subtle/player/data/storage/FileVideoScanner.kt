@@ -33,7 +33,9 @@ class FileVideoScanner @Inject constructor(
             folders++
             onProgress(ScanProgress(folders, found.size))
         })
-        found.sortedBy { it.displayName.lowercase() }
+        // Ordering belongs to the caller: Home sorts and filters this list itself, so sorting here
+        // would just be a second full pass over the library.
+        found
     }
 
     suspend fun listDirectory(path: String?): DirectoryContent = withContext(io) {

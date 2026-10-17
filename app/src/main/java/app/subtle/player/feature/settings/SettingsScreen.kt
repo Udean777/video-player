@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,9 +27,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.subtle.player.R
 import app.subtle.player.core.designsystem.SubtleTheme
+import app.subtle.player.core.designsystem.rememberHeaderBrush
 import app.subtle.player.domain.model.AppLanguage
 import app.subtle.player.domain.model.SubtitleBackground
 import app.subtle.player.domain.model.SubtitleColor
@@ -71,113 +76,144 @@ fun SettingsScreen(
 ) {
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
-                    }
-                },
-            )
+            Box(Modifier.fillMaxWidth().background(rememberHeaderBrush())) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.settings_title)) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                        }
+                    },
+                )
+            }
         },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            SectionHeader(stringResource(R.string.settings_theme))
-            OptionRow(R.string.settings_theme_system, ThemeMode.System, state.settings.theme, onThemeChange)
-            OptionRow(R.string.settings_theme_light, ThemeMode.Light, state.settings.theme, onThemeChange)
-            OptionRow(R.string.settings_theme_dark, ThemeMode.Dark, state.settings.theme, onThemeChange)
-
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Label(stringResource(R.string.settings_language))
-            AppLanguage.entries.forEach {
-                OptionRow(it.labelRes(), it, state.settings.language, onLanguageChange)
+            SettingsCard {
+                SectionHeader(stringResource(R.string.settings_theme))
+                OptionRow(R.string.settings_theme_system, ThemeMode.System, state.settings.theme, onThemeChange)
+                OptionRow(R.string.settings_theme_light, ThemeMode.Light, state.settings.theme, onThemeChange)
+                OptionRow(R.string.settings_theme_dark, ThemeMode.Dark, state.settings.theme, onThemeChange)
             }
-
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SwitchRow(
-                title = stringResource(R.string.settings_dynamic_color),
-                subtitle = stringResource(R.string.settings_dynamic_color_desc),
-                checked = state.settings.dynamicColor,
-                onCheckedChange = onDynamicColorChange,
-            )
-            SwitchRow(
-                title = stringResource(R.string.settings_force_software),
-                subtitle = stringResource(R.string.settings_force_software_desc),
-                checked = state.settings.forceSoftwareDecoding,
-                onCheckedChange = onForceSoftwareDecodingChange,
-            )
-            SwitchRow(
-                title = stringResource(R.string.settings_auto_play_next),
-                subtitle = stringResource(R.string.settings_auto_play_next_desc),
-                checked = state.settings.autoPlayNext,
-                onCheckedChange = onAutoPlayNextChange,
-            )
-
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SectionHeader(stringResource(R.string.settings_subtitle_style))
-            Text(
-                text = stringResource(R.string.settings_subtitle_style_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            SubtitleStylePreview(
-                style = state.settings.subtitleStyle,
-                modifier = Modifier.padding(16.dp),
-            )
-            Label(stringResource(R.string.subtitle_style_size))
-            SubtitleSize.entries.forEach {
-                OptionRow(it.labelRes(), it, state.settings.subtitleStyle.size, onSubtitleSizeChange)
+            CardGap()
+            SettingsCard {
+                Label(stringResource(R.string.settings_language))
+                AppLanguage.entries.forEach {
+                    OptionRow(it.labelRes(), it, state.settings.language, onLanguageChange)
+                }
             }
-            Label(stringResource(R.string.subtitle_style_color))
-            SubtitleColor.entries.forEach {
-                OptionRow(it.labelRes(), it, state.settings.subtitleStyle.color, onSubtitleColorChange)
+            CardGap()
+            SettingsCard {
+                SwitchRow(
+                    title = stringResource(R.string.settings_dynamic_color),
+                    subtitle = stringResource(R.string.settings_dynamic_color_desc),
+                    checked = state.settings.dynamicColor,
+                    onCheckedChange = onDynamicColorChange,
+                )
+                SwitchRow(
+                    title = stringResource(R.string.settings_force_software),
+                    subtitle = stringResource(R.string.settings_force_software_desc),
+                    checked = state.settings.forceSoftwareDecoding,
+                    onCheckedChange = onForceSoftwareDecodingChange,
+                )
+                SwitchRow(
+                    title = stringResource(R.string.settings_auto_play_next),
+                    subtitle = stringResource(R.string.settings_auto_play_next_desc),
+                    checked = state.settings.autoPlayNext,
+                    onCheckedChange = onAutoPlayNextChange,
+                )
             }
-            Label(stringResource(R.string.subtitle_style_background))
-            SubtitleBackground.entries.forEach {
-                OptionRow(it.labelRes(), it, state.settings.subtitleStyle.background, onSubtitleBackgroundChange)
+            CardGap()
+            SettingsCard {
+                SectionHeader(stringResource(R.string.settings_subtitle_style))
+                Text(
+                    text = stringResource(R.string.settings_subtitle_style_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                SubtitleStylePreview(
+                    style = state.settings.subtitleStyle,
+                    modifier = Modifier.padding(16.dp),
+                )
+                Label(stringResource(R.string.subtitle_style_size))
+                SubtitleSize.entries.forEach {
+                    OptionRow(it.labelRes(), it, state.settings.subtitleStyle.size, onSubtitleSizeChange)
+                }
+                Label(stringResource(R.string.subtitle_style_color))
+                SubtitleColor.entries.forEach {
+                    OptionRow(it.labelRes(), it, state.settings.subtitleStyle.color, onSubtitleColorChange)
+                }
+                Label(stringResource(R.string.subtitle_style_background))
+                SubtitleBackground.entries.forEach {
+                    OptionRow(it.labelRes(), it, state.settings.subtitleStyle.background, onSubtitleBackgroundChange)
+                }
+                SwitchRow(
+                    title = stringResource(R.string.subtitle_style_outline),
+                    subtitle = stringResource(R.string.subtitle_style_outline_desc),
+                    checked = state.settings.subtitleStyle.outline,
+                    onCheckedChange = onSubtitleOutlineChange,
+                )
+                SwitchRow(
+                    title = stringResource(R.string.subtitle_style_ass),
+                    subtitle = stringResource(R.string.subtitle_style_ass_desc),
+                    checked = state.settings.subtitleStyle.assUseMyStyle,
+                    onCheckedChange = onSubtitleAssOverrideChange,
+                )
             }
-            SwitchRow(
-                title = stringResource(R.string.subtitle_style_outline),
-                subtitle = stringResource(R.string.subtitle_style_outline_desc),
-                checked = state.settings.subtitleStyle.outline,
-                onCheckedChange = onSubtitleOutlineChange,
-            )
-            SwitchRow(
-                title = stringResource(R.string.subtitle_style_ass),
-                subtitle = stringResource(R.string.subtitle_style_ass_desc),
-                checked = state.settings.subtitleStyle.assUseMyStyle,
-                onCheckedChange = onSubtitleAssOverrideChange,
-            )
-
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Label(stringResource(R.string.settings_subtitle_language))
-            Text(
-                text = stringResource(R.string.settings_subtitle_language_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            SubtitleLanguage.entries.forEach {
-                OptionRow(it.labelRes(), it, state.settings.subtitleLanguage, onSubtitleLanguageChange)
+            CardGap()
+            SettingsCard {
+                Label(stringResource(R.string.settings_subtitle_language))
+                Text(
+                    text = stringResource(R.string.settings_subtitle_language_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                SubtitleLanguage.entries.forEach {
+                    OptionRow(it.labelRes(), it, state.settings.subtitleLanguage, onSubtitleLanguageChange)
+                }
             }
-
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.settings_about)) },
-                supportingContent = { Text(stringResource(R.string.settings_about_desc)) },
-                leadingContent = { Icon(Icons.Filled.Info, contentDescription = null) },
-                trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                modifier = Modifier.clickable(onClick = onOpenAbout),
-            )
+            CardGap()
+            SettingsCard {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.settings_about)) },
+                    supportingContent = { Text(stringResource(R.string.settings_about_desc)) },
+                    leadingContent = { Icon(Icons.Filled.Info, contentDescription = null) },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                    },
+                    modifier = Modifier.clickable(onClick = onOpenAbout),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), content = content)
+    }
+}
+
+@Composable
+private fun CardGap() {
+    Spacer(Modifier.height(12.dp))
 }
 
 @Composable
@@ -221,7 +257,7 @@ private fun SubtitleStylePreview(style: SubtitleStyle, modifier: Modifier = Modi
         modifier = modifier
             .fillMaxWidth()
             .height(160.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Color.Black),
         contentAlignment = Alignment.BottomCenter,
     ) {

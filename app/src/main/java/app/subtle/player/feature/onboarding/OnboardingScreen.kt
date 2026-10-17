@@ -1,6 +1,13 @@
 package app.subtle.player.feature.onboarding
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +31,6 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +49,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.subtle.player.R
 import app.subtle.player.core.designsystem.SubtleTheme
+import app.subtle.player.core.designsystem.components.GlassSurface
+import app.subtle.player.core.designsystem.components.GradientBackground
 
 private data class OnboardingStep(
     val titleRes: Int,
@@ -62,9 +70,8 @@ fun OnboardingScreen(
     )
     var index by rememberSaveable { mutableIntStateOf(0) }
     val isLast = index == steps.lastIndex
-    val step = steps[index]
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    GradientBackground(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -78,48 +85,21 @@ fun OnboardingScreen(
                 color = MaterialTheme.colorScheme.primary,
             )
 
-            Column(
+            AnimatedContent(
+                targetState = index,
+                transitionSpec = {
+                    val direction = if (targetState > initialState) 1 else -1
+                    (
+                        slideInHorizontally(tween(260)) { it * direction } + fadeIn(tween(260))
+                        ) togetherWith (
+                        slideOutHorizontally(tween(200)) { -it * direction } + fadeOut(tween(160))
+                        )
+                },
+                contentAlignment = Alignment.Center,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(112.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = step.icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(52.dp),
-                    )
-                }
-                Spacer(Modifier.height(28.dp))
-                Text(
-                    text = stringResource(step.titleRes),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = stringResource(step.descRes),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-                if (isLast) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(R.string.onboarding_access_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                label = "onboarding",
+            ) { stepIndex ->
+                StepContent(step = steps[stepIndex], isLast = stepIndex == steps.lastIndex)
             }
 
             StepProgress(current = index, total = steps.size)
@@ -155,6 +135,51 @@ fun OnboardingScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StepContent(step: OnboardingStep, isLast: Boolean) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        GlassSurface(
+            modifier = Modifier.size(112.dp),
+            shape = RoundedCornerShape(28.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = step.icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(52.dp),
+            )
+        }
+        Spacer(Modifier.height(28.dp))
+        Text(
+            text = stringResource(step.titleRes),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(step.descRes),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        if (isLast) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.onboarding_access_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

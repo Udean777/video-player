@@ -41,7 +41,7 @@ class HomeViewModelTest {
 
     @Test
     fun loadsEveryVideoOnStart() = runTest {
-        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle(), testDispatcher)
 
         advanceUntilIdle()
 
@@ -51,7 +51,7 @@ class HomeViewModelTest {
     @Test
     fun refreshReloads() = runTest {
         val repository = FakeStorageRepository()
-        val viewModel = HomeViewModel(repository, FakePlaybackProgressRepository(), SavedStateHandle())
+        val viewModel = HomeViewModel(repository, FakePlaybackProgressRepository(), SavedStateHandle(), testDispatcher)
         advanceUntilIdle()
 
         repository.videos = listOf(Video("file:///sdcard/c.mp4", "c.mp4", 1L, 0L))
@@ -63,7 +63,7 @@ class HomeViewModelTest {
 
     @Test
     fun viewModeSwitches() = runTest {
-        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle(), testDispatcher)
         advanceUntilIdle()
 
         viewModel.setViewMode(BrowserViewMode.Grid)
@@ -74,7 +74,7 @@ class HomeViewModelTest {
 
     @Test
     fun queryFiltersByName() = runTest {
-        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle(), testDispatcher)
         advanceUntilIdle()
 
         viewModel.setQuery("a.")
@@ -85,7 +85,7 @@ class HomeViewModelTest {
 
     @Test
     fun scanReportsProgressAndFinishes() = runTest {
-        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle(), testDispatcher)
 
         advanceUntilIdle()
 
@@ -95,7 +95,7 @@ class HomeViewModelTest {
 
     @Test
     fun groupSeriesBuildsGroups() = runTest {
-        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle())
+        val viewModel = HomeViewModel(FakeStorageRepository(), FakePlaybackProgressRepository(), SavedStateHandle(), testDispatcher)
         advanceUntilIdle()
 
         viewModel.setGroupSeries(true)
@@ -108,7 +108,7 @@ class HomeViewModelTest {
     @Test
     fun sortByLastPlayedPutsRecentlyPlayedFirst() = runTest {
         val progress = FakePlaybackProgressRepository()
-        val viewModel = HomeViewModel(FakeStorageRepository(), progress, SavedStateHandle())
+        val viewModel = HomeViewModel(FakeStorageRepository(), progress, SavedStateHandle(), testDispatcher)
         advanceUntilIdle()
 
         viewModel.setSort(VideoSort.LastPlayed)

@@ -1,6 +1,8 @@
 package app.subtle.player.feature.browse
 
 import android.content.res.Configuration
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,23 +22,28 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.subtle.player.R
 import app.subtle.player.core.designsystem.SubtleTheme
+import app.subtle.player.core.designsystem.components.EmptyState
+import app.subtle.player.core.designsystem.rememberHeaderBrush
 import app.subtle.player.domain.model.Breadcrumb
 import app.subtle.player.domain.model.FolderEntry
 import app.subtle.player.domain.model.Video
@@ -61,77 +68,76 @@ fun BrowseScreen(
 ) {
     Scaffold(
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = { Text(state.path.lastOrNull()?.name ?: stringResource(R.string.tab_browse)) },
-                navigationIcon = {
-                    if (state.canGoUp) {
-                        IconButton(onClick = onUp) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+            Column(Modifier.fillMaxWidth().background(rememberHeaderBrush())) {
+                TopAppBar(
+                    title = { Text(state.path.lastOrNull()?.name ?: stringResource(R.string.tab_browse)) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                    navigationIcon = {
+                        if (state.canGoUp) {
+                            IconButton(onClick = onUp) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                            }
                         }
-                    }
-                },
-                actions = {
-                    BrowserActions(
-                        mode = state.viewMode,
-                        onViewModeChange = onViewModeChange,
-                        onRefresh = onRefresh,
-                    )
-                },
-            )
+                    },
+                    actions = {
+                        BrowserActions(
+                            mode = state.viewMode,
+                            onViewModeChange = onViewModeChange,
+                            onRefresh = onRefresh,
+                        )
+                    },
+                )
+                BreadcrumbRow(path = state.path, onBreadcrumbClick = onBreadcrumbClick)
+            }
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            BreadcrumbRow(path = state.path, onBreadcrumbClick = onBreadcrumbClick)
-
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 state.isLoading && state.folders.isEmpty() && state.videos.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
 
                 state.folders.isEmpty() && state.videos.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.no_entries))
-                    }
+                    EmptyState(icon = Icons.Filled.FolderOpen, title = stringResource(R.string.no_entries))
                 }
 
-                state.viewMode == BrowserViewMode.List -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                    ) {
-                        items(state.folders, key = { "f:${it.path}" }) { folder ->
-                            FolderRow(folder = folder, onClick = { onFolderClick(folder) })
+                else -> Crossfade(targetState = state.viewMode, label = "viewMode") { mode ->
+                    if (mode == BrowserViewMode.List) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                        ) {
+                            items(state.folders, key = { "f:${it.path}" }) { folder ->
+                                FolderRow(folder = folder, onClick = { onFolderClick(folder) })
+                            }
+                            items(state.videos, key = { "v:${it.uri}" }) { video ->
+                                VideoRow(
+                                    video = video,
+                                    progressFraction = state.progress[video.uri]?.fraction,
+                                    onClick = { onVideoClick(video) },
+                                )
+                            }
                         }
-                        items(state.videos, key = { "v:${it.uri}" }) { video ->
-                            VideoRow(
-                                video = video,
-                                progressFraction = state.progress[video.uri]?.fraction,
-                                onClick = { onVideoClick(video) },
-                            )
-                        }
-                    }
-                }
-
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(160.dp),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(state.folders, key = { "f:${it.path}" }) { folder ->
-                            FolderCell(folder = folder, onClick = { onFolderClick(folder) })
-                        }
-                        items(state.videos, key = { "v:${it.uri}" }) { video ->
-                            VideoCell(
-                                video = video,
-                                progressFraction = state.progress[video.uri]?.fraction,
-                                onClick = { onVideoClick(video) },
-                            )
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(160.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(state.folders, key = { "f:${it.path}" }) { folder ->
+                                FolderCell(folder = folder, onClick = { onFolderClick(folder) })
+                            }
+                            items(state.videos, key = { "v:${it.uri}" }) { video ->
+                                VideoCell(
+                                    video = video,
+                                    progressFraction = state.progress[video.uri]?.fraction,
+                                    onClick = { onVideoClick(video) },
+                                )
+                            }
                         }
                     }
                 }
@@ -149,18 +155,21 @@ private fun BreadcrumbRow(path: List<Breadcrumb>, onBreadcrumbClick: (Int) -> Un
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         path.forEachIndexed { index, crumb ->
             if (index > 0) {
                 Icon(
                     Icons.Filled.ChevronRight,
                     contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp),
                 )
             }
-            TextButton(onClick = { onBreadcrumbClick(index) }) {
-                Text(crumb.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            AssistChip(
+                onClick = { onBreadcrumbClick(index) },
+                label = { Text(crumb.name, maxLines = 1) },
+            )
         }
     }
 }

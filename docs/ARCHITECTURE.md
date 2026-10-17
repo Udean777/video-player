@@ -36,7 +36,8 @@ app/src/main/java/app/subtle/player/
 │   └── Keys.kt                        @Serializable NavKey types
 ├── core/
 │   ├── common/                        dispatcher qualifiers, AppError, small extensions
-│   ├── designsystem/                  SubtleTheme, typography, shared components
+│   ├── designsystem/                  SubtleTheme, Color (brand M3 scheme), Shape, Type,
+│   │                                  Gradients, components/ (GradientBackground, GlassSurface)
 │   └── player/                        PlayerController, PlayerState, Track, PlayerError, MediaSource, PlaybackHolder
 ├── engine/vlc/
 │   ├── VlcPlayerController.kt

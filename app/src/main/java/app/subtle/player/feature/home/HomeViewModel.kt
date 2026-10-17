@@ -3,6 +3,7 @@ package app.subtle.player.feature.home
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.subtle.player.core.common.DefaultDispatcher
 import app.subtle.player.domain.model.Video
 import app.subtle.player.domain.repository.PlaybackProgressRepository
 import app.subtle.player.domain.repository.StorageRepository
@@ -11,7 +12,9 @@ import app.subtle.player.domain.usecase.VideoSort
 import app.subtle.player.domain.usecase.filterAndSortVideos
 import app.subtle.player.feature.common.BrowserViewMode
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +27,7 @@ class HomeViewModel @Inject constructor(
     private val repository: StorageRepository,
     private val progressRepository: PlaybackProgressRepository,
     private val savedStateHandle: SavedStateHandle,
+    @DefaultDispatcher private val background: CoroutineDispatcher,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -41,6 +45,8 @@ class HomeViewModel @Inject constructor(
 
     private var allVideos: List<Video> = emptyList()
     private var scanJob: Job? = null
+    private var filterJob: Job? = null
+    private var lastEmittedFolders = 0
 
     init {
         viewModelScope.launch {
@@ -54,11 +60,16 @@ class HomeViewModel @Inject constructor(
 
     fun refresh() {
         scanJob?.cancel()
+        lastEmittedFolders = -PROGRESS_EVERY_FOLDERS
         scanJob = viewModelScope.launch {
             _uiState.update { it.copy(isScanning = true, scannedFolders = 0, videosFound = 0) }
             allVideos = repository.allVideos { progress ->
-                _uiState.update {
-                    it.copy(scannedFolders = progress.foldersScanned, videosFound = progress.videosFound)
+                // Writing on every folder recomposes the whole screen; a few updates a second is plenty.
+                if (progress.foldersScanned - lastEmittedFolders >= PROGRESS_EVERY_FOLDERS) {
+                    lastEmittedFolders = progress.foldersScanned
+                    _uiState.update {
+                        it.copy(scannedFolders = progress.foldersScanned, videosFound = progress.videosFound)
+                    }
                 }
             }
             _uiState.update { it.copy(isScanning = false) }
@@ -96,12 +107,14 @@ class HomeViewModel @Inject constructor(
 
     private fun applyFilterAndSort() {
         val state = _uiState.value
-        val filtered = filterAndSortVideos(allVideos, state.query, state.sort, state.progress)
-        _uiState.update {
-            it.copy(
-                videos = filtered,
-                groups = if (it.groupSeries) SeriesGrouping.group(filtered) else emptyList(),
-            )
+        // Filtering and sorting a large library is O(n log n); keep it off the main thread so the
+        // search field stays responsive while typing.
+        filterJob?.cancel()
+        filterJob = viewModelScope.launch(background) {
+            val filtered = filterAndSortVideos(allVideos, state.query, state.sort, state.progress)
+            val groups = if (state.groupSeries) SeriesGrouping.group(filtered) else emptyList()
+            ensureActive()
+            _uiState.update { it.copy(videos = filtered, groups = groups) }
         }
     }
 
@@ -109,5 +122,6 @@ class HomeViewModel @Inject constructor(
         private const val KEY_VIEW_MODE = "home_view_mode"
         private const val KEY_SORT = "home_sort"
         private const val KEY_GROUP_SERIES = "home_group_series"
+        private const val PROGRESS_EVERY_FOLDERS = 25
     }
 }

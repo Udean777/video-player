@@ -16,10 +16,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import app.subtle.player.core.designsystem.rememberThemeGradient
 import app.subtle.player.di.ThumbnailEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 
@@ -37,7 +39,7 @@ fun VideoThumbnail(uri: String, modifier: Modifier = Modifier) {
     }
 
     Box(
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = modifier.background(Brush.linearGradient(rememberThemeGradient())),
         contentAlignment = Alignment.Center,
     ) {
         val frame = bitmap
@@ -53,7 +55,7 @@ fun VideoThumbnail(uri: String, modifier: Modifier = Modifier) {
             Icon(
                 Icons.Filled.Movie,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                 modifier = Modifier.size(28.dp),
             )
         }

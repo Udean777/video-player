@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Forward10
@@ -47,13 +48,11 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -67,6 +66,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -83,6 +84,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import app.subtle.player.MainActivity
 import app.subtle.player.R
 import app.subtle.player.core.designsystem.SubtleTheme
+import app.subtle.player.core.designsystem.components.GlassSurface
 import app.subtle.player.core.player.PlayerController
 import app.subtle.player.core.player.PlayerError
 import app.subtle.player.core.player.PlayerState
@@ -292,7 +294,7 @@ fun PlayerScreen(
 
         if (locked) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.5f)) {
+                GlassSurface(shape = CircleShape, tint = Color.Black, alpha = 0.5f) {
                     IconButton(onClick = { locked = false }) {
                         Icon(
                             Icons.Filled.LockOpen,
@@ -334,7 +336,19 @@ private fun BoxScope.PlayerControls(
         state.player.status == PlayerState.Status.Buffering
     val error = state.error
 
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            // Vertical scrim: dark at the bars, clear over the picture, so the video stays visible.
+            .background(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.55f),
+                    0.35f to Color.Transparent,
+                    0.65f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = 0.7f),
+                ),
+            ),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().align(Alignment.TopStart).statusBarsPadding()
                 .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -401,13 +415,21 @@ private fun BoxScope.PlayerControls(
                         CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
                     }
                 } else {
-                    IconButton(onClick = { if (playing) onPause() else onPlay() }, modifier = Modifier.size(72.dp)) {
-                        Icon(
-                            imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
-                            tint = Color.White,
-                            modifier = Modifier.size(56.dp),
-                        )
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        IconButton(onClick = { if (playing) onPause() else onPlay() }) {
+                            Icon(
+                                imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
+                                tint = Color.White,
+                                modifier = Modifier.size(44.dp),
+                            )
+                        }
                     }
                 }
                 TransportButton(Icons.Filled.Forward10, R.string.forward_10, true, onSkipForward)
@@ -525,12 +547,11 @@ private fun formatTime(positionMs: Long): String {
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, seconds)
-    } else {
-        "%d:%02d".format(minutes, seconds)
-    }
+    // Hand-rolled: this runs on every recomposition while playing; String.format is costly.
+    return if (hours > 0) "$hours:${pad(minutes)}:${pad(seconds)}" else "$minutes:${pad(seconds)}"
 }
+
+private fun pad(value: Int): String = if (value < 10) "0$value" else value.toString()
 
 /** Reads the activity brightness, treating "follow system" (-1) as fully bright. */
 private fun Activity?.currentBrightness(): Float {
@@ -557,7 +578,7 @@ private sealed interface GestureHud {
 @Composable
 private fun GestureHudOverlay(hud: GestureHud) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Surface(color = Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp)) {
+        GlassSurface(tint = Color.Black, alpha = 0.55f, shape = RoundedCornerShape(16.dp)) {
             Row(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -569,7 +590,7 @@ private fun GestureHudOverlay(hud: GestureHud) {
                         Text("${(hud.value * 100).roundToInt()}%", color = Color.White)
                     }
                     is GestureHud.Volume -> {
-                        Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = Color.White)
                         Text("${hud.value}%", color = Color.White)
                     }
                     is GestureHud.Scrub -> {
